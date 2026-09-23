@@ -30,6 +30,8 @@
   .badge-off{margin-left:auto;font-size:10.5px;background:var(--gris-campo);color:var(--gris);
     padding:5px 10px;border-radius:20px;display:flex;align-items:center;gap:5px;font-weight:600;flex-shrink:0}
   .badge-off .dot{width:6px;height:6px;border-radius:50%;background:#F0A92E}
+  .badge-off.con-senal{background:#E7F4EA;color:var(--verdeok)}
+  .badge-off.con-senal .dot{background:var(--verdeok)}
 
   .pantalla{display:none;padding:0 0 92px}
   .pantalla.activa{display:block}
@@ -331,7 +333,7 @@
       <div class="brand" id="tituloTop">Agrícola San José</div>
       <div class="sub" id="subTop">Acceso</div>
     </div>
-    <div class="badge-off"><span class="dot"></span>Sin señal — modo local</div>
+    <div class="badge-off" id="badgeSenal"><span class="dot"></span><span id="badgeSenalTxt">Sin señal — modo local</span></div>
     <div class="menu-esquina" id="btnMenu" onclick="alternarMenu(event)" style="display:none">⋮</div>
   </div>
 
@@ -880,6 +882,17 @@ function construirEstructuras(contratistas, personal, labores, centros, usuarios
 }
 
 // Trae los catálogos reales. Si no hay señal, usa la última copia guardada en el teléfono.
+// El cartel de arriba ahora refleja la conexión real, no un texto fijo.
+function actualizarBadgeSenal(conSenal){
+  const badge=document.getElementById('badgeSenal');
+  const txt=document.getElementById('badgeSenalTxt');
+  if(!badge || !txt) return;
+  badge.classList.toggle('con-senal', !!conSenal);
+  txt.textContent = conSenal ? 'Con señal' : 'Sin señal — modo local';
+}
+window.addEventListener('online', ()=>actualizarBadgeSenal(true));
+window.addEventListener('offline', ()=>actualizarBadgeSenal(false));
+
 async function cargarCatalogos(){
   try{
     const [c,p,l,cc,u]=await Promise.all([
@@ -920,9 +933,11 @@ async function subirFolioLocal(item){
     const {data}=await sb.from('terrenokizeo_folios').select('correlativo').eq('id', item.uuid).single();
     item.estado='subido';
     item.folio=data ? data.correlativo : null;
+    actualizarBadgeSenal(true);
     return true;
   }catch(e){
     console.warn('No se pudo subir el folio '+item.uuid+' (sigue pendiente)', e);
+    actualizarBadgeSenal(false);
     return false;
   }
 }
@@ -2080,12 +2095,7 @@ function limpiarFirma(){
 
 // El correlativo vive en el servidor, NO en el teléfono. Acá solo se simula Supabase.
 let CORRELATIVO_SERVIDOR=7302;
-let FOLIOS_LOCALES=[
-  {uuid:'a1', folio:7298, tipoFormulario:'supervisor', estado:'subido', fecha:new Date().toISOString().slice(0,10),
-   cuartel:'P06', labor:'HOYADURA', contratista:'JAVIER ESCUDERO', ruts:[]},
-  {uuid:'b2', folio:null, tipoFormulario:'supervisor', estado:'pendiente', fecha:new Date().toISOString().slice(0,10),
-   cuartel:'C27', labor:'PODA', contratista:'CLAUDIO CASTILLO', ruts:[]}
-];
+let FOLIOS_LOCALES=[];
 
 function uuidLocal(){
   return 'xxxxxxxx-xxxx-4xxx-yxxx'.replace(/[xy]/g,c=>{
@@ -2622,7 +2632,8 @@ window.addEventListener('resize', detectarDispositivo);
 // Arranque real: primero trae los catálogos de Supabase (o la copia guardada
 // si no hay señal), recién ahí pinta los selectores y muestra el acceso.
 async function iniciarApp(){
-  await cargarCatalogos();
+  const conectado=await cargarCatalogos();
+  actualizarBadgeSenal(conectado);
   pintarSupervisores();
   pintarGruposLabor();
   pintarGruposCentro();
