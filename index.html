@@ -405,6 +405,9 @@
       <button data-est="aprobado" onclick="filtrarAdmin('aprobado')">Aprobados (<span id="cnt-aprobado"></span>)</button>
       <button data-est="anulado" onclick="filtrarAdmin('anulado')">Anulados (<span id="cnt-anulado"></span>)</button>
     </div>
+    <div id="bloqueExportar" style="display:none;margin-bottom:14px">
+      <button class="btn btn-ok" onclick="exportarAprobados()">⬇️ Exportar aprobados sin extraer a Excel</button>
+    </div>
     <div id="listaAdmin"></div>
     <a onclick="cerrarSesion()" style="display:block;text-align:center;margin:20px 16px 0;color:var(--rojo);font-size:13px;cursor:pointer">Cerrar sesión</a>
   </div>
@@ -832,6 +835,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 // ===================== CONEXIÓN REAL A SUPABASE =====================
 const SUPABASE_URL='https://cmfvnluppvqyqwpfjrbs.supabase.co';
@@ -841,6 +845,7 @@ const sb=window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // Mapas nombre -> id real, para poder insertar folios con las claves foráneas correctas
 let MAP_CONTRATISTA_ID={}, MAP_CC_ID={}, MAP_LABOR_ID={}, MAP_USUARIO_ID={};
 let MAP_CONTRATISTA_NOMBRE={}, MAP_CC_NOMBRE={}, MAP_LABOR_NOMBRE={}, MAP_USUARIO_NOMBRE={};
+let MAP_CC_GRUPO={}, MAP_LABOR_GRUPO={};
 
 // Arma PERSONAL_DATA, LABOR_DATA, CENTROS_COSTO, CODIGOS_*, SUPERVISORES y ADMINISTRADORES
 // a partir de las filas reales que vienen de Supabase — deja todo con la MISMA forma
@@ -857,19 +862,21 @@ function construirEstructuras(contratistas, personal, labores, centros, usuarios
     (PERSONAL_DATA[nombreContratista]=PERSONAL_DATA[nombreContratista]||[]).push({nom:p.nombre, rut:p.rut});
   });
 
-  LABOR_DATA={}; MAP_LABOR_ID={}; MAP_LABOR_NOMBRE={}; CODIGOS_LABOR={};
+  LABOR_DATA={}; MAP_LABOR_ID={}; MAP_LABOR_NOMBRE={}; MAP_LABOR_GRUPO={}; CODIGOS_LABOR={};
   labores.forEach(l=>{
     (LABOR_DATA[l.grupo]=LABOR_DATA[l.grupo]||[]).push({label:l.nombre, unidad:l.unidad});
     MAP_LABOR_ID[l.nombre]=l.id;
     MAP_LABOR_NOMBRE[l.id]=l.nombre;
+    MAP_LABOR_GRUPO[l.id]=l.grupo;
     CODIGOS_LABOR[l.nombre]=l.codigo;
   });
 
-  CENTROS_COSTO={}; MAP_CC_ID={}; MAP_CC_NOMBRE={}; CODIGOS_CENTRO_COSTO={};
+  CENTROS_COSTO={}; MAP_CC_ID={}; MAP_CC_NOMBRE={}; MAP_CC_GRUPO={}; CODIGOS_CENTRO_COSTO={};
   centros.forEach(c=>{
     (CENTROS_COSTO[c.grupo]=CENTROS_COSTO[c.grupo]||[]).push(c.nombre);
     MAP_CC_ID[c.nombre]=c.id;
     MAP_CC_NOMBRE[c.id]=c.nombre;
+    MAP_CC_GRUPO[c.id]=c.grupo;
     CODIGOS_CENTRO_COSTO[c.nombre]={codigo:c.codigo, variedad:c.variedad||''};
   });
 
@@ -1118,7 +1125,74 @@ async function cargarFoliosAdmin(estado){
 function filtrarAdmin(est){
   ADMIN_FILTRO=est;
   document.querySelectorAll('#p-admin-lista .segmentado button').forEach(b=>b.classList.toggle('on', b.dataset.est===est));
+  document.getElementById('bloqueExportar').style.display = est==='aprobado' ? 'block' : 'none';
   cargarFoliosAdmin(est);
+}
+
+// Junta los aprobados que todavía no se extrajeron, arma el Excel con el formato
+// de Liliana, lo descarga, y recién ahí los marca como extraídos — así nunca
+// se repiten, sin importar cuántas veces se apriete el botón.
+async function exportarAprobados(){
+  const btn=document.querySelector('#bloqueExportar .btn');
+  if(btn){ btn.disabled=true; btn.textContent='Preparando el Excel…'; }
+  try{
+    const {data, error}=await sb.from('terrenokizeo_folios')
+      .select('*, terrenokizeo_folio_lineas(*)')
+      .eq('estado','aprobado')
+      .is('extraido_en', null);
+    if(error) throw error;
+    if(!data.length){ alert('No hay folios aprobados pendientes de extraer.'); return; }
+
+    const filas=[];
+    data.forEach(f=>{
+      const encargado=MAP_USUARIO_NOMBRE[f.encargado_id] || '';
+      const contratista=MAP_CONTRATISTA_NOMBRE[f.contratista_id] || '';
+      const fechaFmt=f.fecha ? f.fecha.split('-').reverse().join('-') : '';
+      (f.terrenokizeo_folio_lineas||[]).forEach(l=>{
+        filas.push({
+          'ESTADO': 'APROBADO',
+          'FOLIO': f.correlativo,
+          'ENCARGADO': encargado,
+          'CAMPO': MAP_LABOR_GRUPO[l.labor_id] || '',
+          'GRUPO CENTRO': MAP_CC_GRUPO[l.centro_costo_id] || '',
+          'FECHA': fechaFmt,
+          'CÓD CENTRO': (CODIGOS_CENTRO_COSTO[MAP_CC_NOMBRE[l.centro_costo_id]]||{}).codigo || '',
+          'CENTRO': MAP_CC_NOMBRE[l.centro_costo_id] || '',
+          'VARIEDAD': (CODIGOS_CENTRO_COSTO[MAP_CC_NOMBRE[l.centro_costo_id]]||{}).variedad || '',
+          'CÓD LABOR': CODIGOS_LABOR[MAP_LABOR_NOMBRE[l.labor_id]] || '',
+          'LABOR': MAP_LABOR_NOMBRE[l.labor_id] || '',
+          'CONTRATISTA': contratista,
+          'PERSONAL#': l.rut_trabajador,
+          'NOMBRE T': l.nombre_trabajador,
+          'JORNADA': Number(l.jornada)||0,
+          'TRATO/DIA': (l.tipo_pago||'').toUpperCase(),
+          'N PLANTAS': l.unidades!=null ? Number(l.unidades) : '',
+          'VALOR UNIT': l.valor_unitario!=null ? Number(l.valor_unitario) : ''
+        });
+      });
+    });
+
+    const hoja=XLSX.utils.json_to_sheet(filas);
+    const libro=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(libro, hoja, 'Aprobados');
+    const nombreArchivo='aprobados_'+hoyISO()+'.xlsx';
+    XLSX.writeFile(libro, nombreArchivo);
+
+    const ids=data.map(f=>f.id);
+    const {error:e2}=await sb.from('terrenokizeo_folios').update({extraido_en:new Date().toISOString()}).in('id', ids);
+    if(e2){
+      alert('El Excel se descargó, pero no se pudo marcar como extraído en el servidor.\nSi lo volvés a apretar, van a salir los mismos folios de nuevo — avisa antes de repetir la extracción.');
+    }else{
+      alert(data.length+' folio(s) exportado(s) a '+nombreArchivo+'.\nQuedan marcados como extraídos: la próxima vez no van a volver a salir.');
+    }
+    cargarConteosAdmin();
+    cargarFoliosAdmin('aprobado');
+  }catch(e){
+    console.warn('No se pudo exportar', e);
+    alert('No se pudo exportar. Revisa la conexión e inténtalo de nuevo.');
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='⬇️ Exportar aprobados sin extraer a Excel'; }
+  }
 }
 function pintarAdminLista(){
   const cont=document.getElementById('listaAdmin');
@@ -1209,7 +1283,7 @@ function ir(id){
     atras.style.visibility='visible'; titulo.textContent='Datos del trabajador'; sub.textContent=document.getElementById('selLabor').value;
     document.getElementById('barraLinea').style.display='block';
   }
-  if(id==='p-admin-lista'){ atras.style.visibility='visible'; titulo.textContent='Bandeja de folios'; sub.textContent='Vista administrador'; cargarConteosAdmin(); cargarFoliosAdmin(ADMIN_FILTRO); }
+  if(id==='p-admin-lista'){ atras.style.visibility='visible'; titulo.textContent='Bandeja de folios'; sub.textContent='Vista administrador'; document.getElementById('bloqueExportar').style.display = ADMIN_FILTRO==='aprobado' ? 'block' : 'none'; cargarConteosAdmin(); cargarFoliosAdmin(ADMIN_FILTRO); }
   if(id==='p-admin-cuarteles'){ atras.style.visibility='visible'; titulo.textContent='Avance por cuartel'; sub.textContent='Vista administrador'; pintarCuarteles(); }
   if(id==='p-admin-detalle'){ atras.style.visibility='visible'; titulo.textContent='Folio N° '+ADMIN_ACTUAL.folio; sub.textContent=ADMIN_ACTUAL.contratista; }
 }
