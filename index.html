@@ -442,8 +442,8 @@
     </div>
     <div class="seccion">
       <div class="titulo-seccion">Encargado y contratista</div>
-      <label>Encargado SAPA</label><select id="adEncargado"><option>Sergio Rojas</option><option>Rodrigo Salinas</option></select>
-      <label>Contratista</label><select id="adContratista"><option>Robinson Zurita</option><option>Javier Escudero</option><option>Claudio Castillo</option></select>
+      <label>Encargado SAPA</label><input type="text" id="adEncargado" readonly>
+      <label>Contratista</label><input type="text" id="adContratista" readonly>
     </div>
     <div class="seccion">
       <div class="titulo-seccion">Centro de costo y labor</div>
@@ -840,14 +840,15 @@ const sb=window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Mapas nombre -> id real, para poder insertar folios con las claves foráneas correctas
 let MAP_CONTRATISTA_ID={}, MAP_CC_ID={}, MAP_LABOR_ID={}, MAP_USUARIO_ID={};
+let MAP_CONTRATISTA_NOMBRE={}, MAP_CC_NOMBRE={}, MAP_LABOR_NOMBRE={}, MAP_USUARIO_NOMBRE={};
 
 // Arma PERSONAL_DATA, LABOR_DATA, CENTROS_COSTO, CODIGOS_*, SUPERVISORES y ADMINISTRADORES
 // a partir de las filas reales que vienen de Supabase — deja todo con la MISMA forma
 // que usaba la maqueta, para no tener que tocar el resto del código.
 function construirEstructuras(contratistas, personal, labores, centros, usuarios){
-  MAP_CONTRATISTA_ID={};
+  MAP_CONTRATISTA_ID={}; MAP_CONTRATISTA_NOMBRE={};
   const nombrePorIdContratista={};
-  contratistas.forEach(c=>{ MAP_CONTRATISTA_ID[c.nombre]=c.id; nombrePorIdContratista[c.id]=c.nombre; });
+  contratistas.forEach(c=>{ MAP_CONTRATISTA_ID[c.nombre]=c.id; MAP_CONTRATISTA_NOMBRE[c.id]=c.nombre; nombrePorIdContratista[c.id]=c.nombre; });
 
   PERSONAL_DATA={};
   personal.forEach(p=>{
@@ -856,23 +857,26 @@ function construirEstructuras(contratistas, personal, labores, centros, usuarios
     (PERSONAL_DATA[nombreContratista]=PERSONAL_DATA[nombreContratista]||[]).push({nom:p.nombre, rut:p.rut});
   });
 
-  LABOR_DATA={}; MAP_LABOR_ID={}; CODIGOS_LABOR={};
+  LABOR_DATA={}; MAP_LABOR_ID={}; MAP_LABOR_NOMBRE={}; CODIGOS_LABOR={};
   labores.forEach(l=>{
     (LABOR_DATA[l.grupo]=LABOR_DATA[l.grupo]||[]).push({label:l.nombre, unidad:l.unidad});
     MAP_LABOR_ID[l.nombre]=l.id;
+    MAP_LABOR_NOMBRE[l.id]=l.nombre;
     CODIGOS_LABOR[l.nombre]=l.codigo;
   });
 
-  CENTROS_COSTO={}; MAP_CC_ID={}; CODIGOS_CENTRO_COSTO={};
+  CENTROS_COSTO={}; MAP_CC_ID={}; MAP_CC_NOMBRE={}; CODIGOS_CENTRO_COSTO={};
   centros.forEach(c=>{
     (CENTROS_COSTO[c.grupo]=CENTROS_COSTO[c.grupo]||[]).push(c.nombre);
     MAP_CC_ID[c.nombre]=c.id;
+    MAP_CC_NOMBRE[c.id]=c.nombre;
     CODIGOS_CENTRO_COSTO[c.nombre]={codigo:c.codigo, variedad:c.variedad||''};
   });
 
-  SUPERVISORES=[]; ADMINISTRADORES=[]; MAP_USUARIO_ID={};
+  SUPERVISORES=[]; ADMINISTRADORES=[]; MAP_USUARIO_ID={}; MAP_USUARIO_NOMBRE={};
   usuarios.forEach(u=>{
     MAP_USUARIO_ID[u.nombre]=u.id;
+    MAP_USUARIO_NOMBRE[u.id]=u.nombre;
     if(u.rol==='supervisor') SUPERVISORES.push({nombre:u.nombre, rut:u.rut});
     if(u.rol==='administrador') ADMINISTRADORES.push(u.nombre);
   });
@@ -1026,18 +1030,112 @@ function pintarContratistas(){
 }
 
 
-function diasAtras(n){ const d=new Date(); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10); }
-const FOLIOS_ADMIN = [
-  {id:1, folio:7268, supervisor:'Pedro Ibáñez', hora:'hoy 09:12 · con señal', fecha:diasAtras(0), contratista:'Javier Escudero', cuartel:'P06', labor:'Hoyadura', jornada:1, tipo:'trato', valor:200,
-   trab:[{nom:'Muñoz Ríos',plantas:214},{nom:'Tapia Le.',plantas:134},{nom:'Bravo S.',plantas:206}], obs:'', estado:'preliminar'},
-  {id:2, folio:7301, supervisor:'Sergio Rojas', hora:'hoy 08:40 · subió sin señal (guardado 07:15)', fecha:diasAtras(0), contratista:'Robinson Zurita', cuartel:'C09', labor:'Reparar y tensar alambre', jornada:0.5, tipo:'dia', valor:45000,
-   trab:[{nom:'Peña Gómez R.',jornada:1},{nom:'González Carr.',jornada:1},{nom:'Sandoval Pain.',jornada:0.5},{nom:'Cea Moreira L.',jornada:0.5}], obs:'Alambre en mal estado en 3 hileras.', estado:'preliminar'},
-  {id:3, folio:7299, supervisor:'Rodrigo Salinas', hora:'ayer 17:03 · con señal', fecha:diasAtras(4), contratista:'Claudio Castillo', cuartel:'C27', labor:'Poda', jornada:1, tipo:'trato', valor:180,
-   trab:[{nom:'Reyes P.',plantas:120},{nom:'Fuentes A.',plantas:98}], obs:'', estado:'aprobado', fechaAprobacion:diasAtras(0), horaAprobacion:'17:05'},
-  {id:4, folio:7280, supervisor:'Sergio Rojas', hora:'lun 10:20 · con señal', fecha:diasAtras(6), contratista:'Robinson Zurita', cuartel:'C11', labor:'Amarra', jornada:1, tipo:'asistencia', valor:0,
-   trab:[{nom:'Peña Gómez R.'},{nom:'González Carr.'}], obs:'Cuadrilla incompleta, faltó 1 persona.', estado:'anulado'}
-];
+let FOLIOS_ADMIN=[];  // se llena con cargarFoliosAdmin(), ya no es una lista fija de ejemplo
 let ADMIN_FILTRO='preliminar', ADMIN_ACTUAL=null;
+
+// Hora corta tipo "hoy 09:12" / "ayer 17:03" / "mié 10:20", a partir de una fecha real.
+function fechaHoraCorta(ts){
+  if(!ts) return '';
+  const d=new Date(ts);
+  const hoy=new Date(); hoy.setHours(0,0,0,0);
+  const esa=new Date(d); esa.setHours(0,0,0,0);
+  const dias=Math.round((hoy-esa)/86400000);
+  const hh=String(d.getHours()).padStart(2,'0'), mm=String(d.getMinutes()).padStart(2,'0');
+  const etiqueta = dias===0 ? 'hoy' : dias===1 ? 'ayer' : d.toLocaleDateString('es-CL',{weekday:'short'});
+  return etiqueta+' '+hh+':'+mm;
+}
+
+// Convierte una fila real de terrenokizeo_folios (con sus líneas) a la forma que
+// usa el resto de la pantalla — cada trabajador conserva su PROPIO tipo/valor/jornada,
+// para que folios Administrativos con combinaciones mixtas se calculen bien.
+function mapearFolioReal(row){
+  const lineas=row.terrenokizeo_folio_lineas || [];
+  const cuarteles=[...new Set(lineas.map(l=>MAP_CC_NOMBRE[l.centro_costo_id]).filter(Boolean))];
+  const labores=[...new Set(lineas.map(l=>MAP_LABOR_NOMBRE[l.labor_id]).filter(Boolean))];
+  const tipos=[...new Set(lineas.map(l=>l.tipo_pago))];
+  const valores=[...new Set(lineas.map(l=>l.valor_unitario))];
+  return {
+    id: row.id,
+    folio: row.correlativo,
+    tipoFormulario: row.tipo_formulario,
+    supervisor: MAP_USUARIO_NOMBRE[row.encargado_id] || '—',
+    hora: fechaHoraCorta(row.creado_en),
+    fecha: row.fecha,
+    contratista: MAP_CONTRATISTA_NOMBRE[row.contratista_id] || '—',
+    cuartel: cuarteles.join(' / ') || '—',
+    labor: labores.join(' / ') || '—',
+    tipo: tipos.length===1 ? tipos[0] : 'mixto',
+    valor: valores.length===1 ? valores[0] : null,
+    obs: row.observaciones || '',
+    estado: row.estado,
+    fechaAprobacion: row.fecha_aprobacion,
+    trab: lineas.map(l=>({
+      nom: l.nombre_trabajador,
+      tipo: l.tipo_pago,
+      valorUnitario: l.valor_unitario,
+      jornada: l.jornada,
+      unidades: l.unidades,
+      centroCosto: MAP_CC_NOMBRE[l.centro_costo_id],
+      labor: MAP_LABOR_NOMBRE[l.labor_id]
+    }))
+  };
+}
+
+// Cuenta cuántos folios hay en cada estado, sin traer todas las filas —
+// para que la pestaña "Aprobados" no cargue de más con el tiempo.
+async function cargarConteosAdmin(){
+  for(const e of ['preliminar','aprobado','anulado']){
+    try{
+      const {count}=await sb.from('terrenokizeo_folios').select('id',{count:'exact', head:true}).eq('estado', e);
+      const el=document.getElementById('cnt-'+e);
+      if(el) el.textContent=count||0;
+    }catch(err){ console.warn('No se pudo contar folios '+e, err); }
+  }
+}
+
+// Trae solo los folios del estado que se está mirando (los otros dos NO se cargan) —
+// así "Aprobados", que solo va a crecer con el tiempo, nunca sobrecarga el HTML.
+async function cargarFoliosAdmin(estado){
+  const cont=document.getElementById('listaAdmin');
+  cont.innerHTML='<p class="desc">Cargando…</p>';
+  try{
+    const {data, error}=await sb.from('terrenokizeo_folios')
+      .select('*, terrenokizeo_folio_lineas(*)')
+      .eq('estado', estado)
+      .order('creado_en', {ascending:false})
+      .limit(200);
+    if(error) throw error;
+    FOLIOS_ADMIN=data.map(mapearFolioReal);
+  }catch(e){
+    console.warn('No se pudieron cargar los folios', e);
+    FOLIOS_ADMIN=[];
+    cont.innerHTML='<p class="desc">No se pudo conectar con el servidor. Revisa la señal e inténtalo de nuevo.</p>';
+    return;
+  }
+  pintarAdminLista();
+}
+
+function filtrarAdmin(est){
+  ADMIN_FILTRO=est;
+  document.querySelectorAll('#p-admin-lista .segmentado button').forEach(b=>b.classList.toggle('on', b.dataset.est===est));
+  cargarFoliosAdmin(est);
+}
+function pintarAdminLista(){
+  const cont=document.getElementById('listaAdmin');
+  if(!FOLIOS_ADMIN.length){ cont.innerHTML='<p class="desc">No hay folios en este estado.</p>'; return; }
+  cont.innerHTML=FOLIOS_ADMIN.map(f=>{
+    const monto = f.tipo==='asistencia' ? 'sin valor (asistencia)'
+      : f.tipo==='mixto' ? 'valores variados'
+      : f.valor==null ? 'sin valor cargado'
+      : (f.tipo==='trato' ? '$'+f.valor+'/planta' : '$'+Number(f.valor).toLocaleString('es-CL')+'/jornada');
+    return '<div class="item-pend" style="cursor:pointer;align-items:flex-start" onclick="abrirDetalleAdmin(\''+f.id+'\')">'+
+      '<div style="flex:1">'+
+      '<div style="font-weight:700;margin-bottom:2px">Folio '+f.folio+' · '+f.cuartel+' · '+f.labor+'</div>'+
+      '<div style="color:var(--gris)">'+f.contratista+' · '+monto+'</div>'+
+      '<div style="color:var(--gris);font-size:11px;margin-top:3px">'+f.supervisor+' · '+f.hora+'</div>'+
+      '</div></div>';
+  }).join('');
+}
 
 function ir(id){
   document.querySelectorAll('.pantalla').forEach(p=>p.classList.remove('activa'));
@@ -1111,7 +1209,7 @@ function ir(id){
     atras.style.visibility='visible'; titulo.textContent='Datos del trabajador'; sub.textContent=document.getElementById('selLabor').value;
     document.getElementById('barraLinea').style.display='block';
   }
-  if(id==='p-admin-lista'){ atras.style.visibility='visible'; titulo.textContent='Bandeja de folios'; sub.textContent='Vista administrador'; pintarAdminLista(); }
+  if(id==='p-admin-lista'){ atras.style.visibility='visible'; titulo.textContent='Bandeja de folios'; sub.textContent='Vista administrador'; cargarConteosAdmin(); cargarFoliosAdmin(ADMIN_FILTRO); }
   if(id==='p-admin-cuarteles'){ atras.style.visibility='visible'; titulo.textContent='Avance por cuartel'; sub.textContent='Vista administrador'; pintarCuarteles(); }
   if(id==='p-admin-detalle'){ atras.style.visibility='visible'; titulo.textContent='Folio N° '+ADMIN_ACTUAL.folio; sub.textContent=ADMIN_ACTUAL.contratista; }
 }
@@ -1130,27 +1228,6 @@ document.getElementById('btnAtras').onclick=()=>{
   else if(activa==='p-admin-detalle') ir('p-admin-lista');
 };
 
-function filtrarAdmin(est){
-  ADMIN_FILTRO=est;
-  document.querySelectorAll('#p-admin-lista .segmentado button').forEach(b=>b.classList.toggle('on', b.dataset.est===est));
-  pintarAdminLista();
-}
-function pintarAdminLista(){
-  ['preliminar','aprobado','anulado'].forEach(e=>document.getElementById('cnt-'+e).textContent=FOLIOS_ADMIN.filter(f=>f.estado===e).length);
-  const cont=document.getElementById('listaAdmin');
-  const filas=FOLIOS_ADMIN.filter(f=>f.estado===ADMIN_FILTRO);
-  const colorEst={preliminar:'est-pendiente', aprobado:'est-ok', anulado:''};
-  if(!filas.length){ cont.innerHTML='<p class="desc">No hay folios en este estado.</p>'; return; }
-  cont.innerHTML=filas.map(f=>{
-    const monto = f.tipo==='trato' ? '$'+f.valor+'/planta' : f.tipo==='dia' ? '$'+f.valor.toLocaleString('es-CL')+'/jornada' : 'sin valor (asistencia)';
-    return '<div class="item-pend" style="cursor:pointer;align-items:flex-start" onclick="abrirDetalleAdmin('+f.id+')">'+
-      '<div style="flex:1">'+
-      '<div style="font-weight:700;margin-bottom:2px">Folio '+f.folio+' · '+f.cuartel+' · '+f.labor+'</div>'+
-      '<div style="color:var(--gris)">'+f.contratista+' · '+monto+'</div>'+
-      '<div style="color:var(--gris);font-size:11px;margin-top:3px">'+f.supervisor+' · '+f.hora+'</div>'+
-      '</div></div>';
-  }).join('');
-}
 // Límite de plantas por cuartel — en producción vendría del maestro de cuarteles (N° de plantas plantadas).
 // Estos son valores de ejemplo para la maqueta.
 const LIMITE_PLANTAS_CUARTEL={'C09':5000,'P06':3200,'C27':2400,'C11':2800};
@@ -1159,14 +1236,32 @@ function totalPlantasFolioAdmin(f){
   if(f.tipo!=='trato') return 0;
   return f.trab.reduce((s,t)=>s+(Number(t.plantas)||0),0);
 }
-function pintarAvisoLimitePlantas(){
+// Chequea el límite contra los folios YA APROBADOS de ese cuartel en la base real
+// (no contra lo que esté cargado en pantalla en este momento).
+async function pintarAvisoLimitePlantas(){
   const cont=document.getElementById('avisoLimitePlantas');
   if(!ADMIN_ACTUAL || ADMIN_ACTUAL.tipo!=='trato'){ cont.innerHTML=''; return; }
   const cuartel=ADMIN_ACTUAL.cuartel;
+  const ccId=MAP_CC_ID[cuartel];
+  if(!ccId){ cont.innerHTML='<p class="fc-nota">Este folio tiene más de un cuartel — el control de límite no aplica acá.</p>'; return; }
+  cont.innerHTML='<p class="desc">Revisando el límite del cuartel…</p>';
+  let yaAprobadas=0;
+  try{
+    const {data, error}=await sb.from('terrenokizeo_folio_lineas')
+      .select('unidades, terrenokizeo_folios!inner(estado)')
+      .eq('centro_costo_id', ccId)
+      .eq('tipo_pago', 'trato')
+      .eq('terrenokizeo_folios.estado', 'aprobado')
+      .neq('folio_id', ADMIN_ACTUAL.id);
+    if(error) throw error;
+    yaAprobadas=(data||[]).reduce((s,r)=>s+(Number(r.unidades)||0),0);
+  }catch(e){
+    console.warn('No se pudo revisar el límite de plantas', e);
+    cont.innerHTML='<p class="desc">No se pudo revisar el límite del cuartel (sin conexión).</p>';
+    return;
+  }
   const limite=limitePlantasCuartel(cuartel);
-  const yaAprobadas=FOLIOS_ADMIN.filter(f=>f.cuartel===cuartel && f.estado==='aprobado' && f.id!==ADMIN_ACTUAL.id)
-    .reduce((s,f)=>s+totalPlantasFolioAdmin(f),0);
-  const esteFolio=totalPlantasFolioAdmin(ADMIN_ACTUAL);
+  const esteFolio=ADMIN_ACTUAL.trab.filter(t=>t.tipo==='trato').reduce((s,t)=>s+(Number(t.unidades)||0),0);
   const total=yaAprobadas+esteFolio;
   const pct=limite ? Math.round(total/limite*100) : 0;
   const excede=total>limite;
@@ -1181,31 +1276,35 @@ function pintarAvisoLimitePlantas(){
 
 function abrirDetalleAdmin(id){
   ADMIN_ACTUAL=FOLIOS_ADMIN.find(f=>f.id===id);
+  if(!ADMIN_ACTUAL) return;
   ir('p-admin-detalle');
   document.getElementById('metaEnvio').textContent=ADMIN_ACTUAL.supervisor+' · '+ADMIN_ACTUAL.hora;
   document.getElementById('metaAprobacion').innerHTML = ADMIN_ACTUAL.fechaAprobacion
-    ? '<div class="chip-cu cu-aprobado" style="display:inline-flex;margin-top:8px">✓ Aprobado el '+fechaLegible(ADMIN_ACTUAL.fechaAprobacion)+' a las '+ADMIN_ACTUAL.horaAprobacion+' — así entra al archivo de pago</div>'
+    ? '<div class="chip-cu cu-aprobado" style="display:inline-flex;margin-top:8px">✓ Aprobado el '+fechaLegible(ADMIN_ACTUAL.fechaAprobacion)+' — así entra al archivo de pago</div>'
     : '';
   document.getElementById('adEncargado').value=ADMIN_ACTUAL.supervisor;
   document.getElementById('adContratista').value=ADMIN_ACTUAL.contratista;
   document.getElementById('adCuartel').value=ADMIN_ACTUAL.cuartel;
-  document.getElementById('adJornada').value=ADMIN_ACTUAL.jornada;
+  document.getElementById('adJornada').value=ADMIN_ACTUAL.trab[0] ? ADMIN_ACTUAL.trab[0].jornada : '';
   document.getElementById('adLabor').value=ADMIN_ACTUAL.labor;
   document.getElementById('adObs').value=ADMIN_ACTUAL.obs;
-  const tipoTxt={trato:'Trato · $'+ADMIN_ACTUAL.valor+'/planta', dia:'Día · $'+ADMIN_ACTUAL.valor.toLocaleString('es-CL')+' la jornada completa', asistencia:'Asistencia · sin valor'};
-  document.getElementById('adTipoTxt').textContent=tipoTxt[ADMIN_ACTUAL.tipo];
+  const tipoTxt = ADMIN_ACTUAL.tipo==='trato' ? 'Trato'+(ADMIN_ACTUAL.valor!=null ? ' · $'+ADMIN_ACTUAL.valor+'/planta' : '')
+    : ADMIN_ACTUAL.tipo==='dia' ? 'Día'+(ADMIN_ACTUAL.valor!=null ? ' · $'+Number(ADMIN_ACTUAL.valor).toLocaleString('es-CL')+' la jornada completa' : '')
+    : ADMIN_ACTUAL.tipo==='asistencia' ? 'Asistencia · sin valor'
+    : 'Tipos de pago variados por línea';
+  document.getElementById('adTipoTxt').textContent=tipoTxt;
+  const esAdmVarios=ADMIN_ACTUAL.tipoFormulario==='administrativo';
   document.getElementById('adListaTrab').innerHTML='<div class="lista-trab-monto">'+ADMIN_ACTUAL.trab.map(t=>{
-    let dato, monto='';
-    if(ADMIN_ACTUAL.tipo==='trato'){
-      dato = t.plantas+' plantas';
-      monto = dinero((Number(t.plantas)||0)*(Number(ADMIN_ACTUAL.valor)||0));
-    }else if(ADMIN_ACTUAL.tipo==='dia'){
-      // el valor del día se multiplica por la jornada de cada trabajador: 0,5 × $30.000 = $15.000
-      const jor=Number(t.jornada)||1;
-      dato = 'jornada '+String(t.jornada||1).replace('.',',');
-      monto = dinero(Math.round(jor*(Number(ADMIN_ACTUAL.valor)||0)));
+    const detalleLinea = esAdmVarios ? ' · '+(t.centroCosto||'—')+' · '+(t.labor||'—') : '';
+    let dato, monto;
+    if(t.tipo==='trato'){
+      dato = (Number(t.unidades)||0)+' plantas'+detalleLinea;
+      monto = dinero((Number(t.unidades)||0)*(Number(t.valorUnitario)||0));
+    }else if(t.tipo==='dia'){
+      dato = 'jornada '+String(t.jornada||1).replace('.',',')+detalleLinea;
+      monto = dinero(Math.round((Number(t.jornada)||1)*(Number(t.valorUnitario)||0)));
     }else{
-      dato = 'presente';
+      dato = 'presente'+detalleLinea;
       monto = '—';
     }
     return '<div class="fila-trab-monto"><div><div class="ftm-nom">'+t.nom+'</div>'+
@@ -1216,21 +1315,27 @@ function abrirDetalleAdmin(id){
   pintarAvisoLimitePlantas();
 }
 
-// Total en plata del folio completo
+// Total en plata del folio completo — sumando cada línea con su propio valor,
+// para que funcione igual de bien en un folio de Supervisor (todo parejo)
+// que en uno Administrativo (cada línea puede tener su propia combinación).
 function pintarTotalFolioAdmin(){
   const cont=document.getElementById('adTotalFolio');
   if(!cont || !ADMIN_ACTUAL) return;
-  let total=0, detalle='';
+  let total=0;
+  ADMIN_ACTUAL.trab.forEach(t=>{
+    if(t.tipo==='trato') total += (Number(t.unidades)||0)*(Number(t.valorUnitario)||0);
+    else if(t.tipo==='dia') total += Math.round((Number(t.jornada)||1)*(Number(t.valorUnitario)||0));
+  });
+  let detalle;
   if(ADMIN_ACTUAL.tipo==='trato'){
-    const plantas=ADMIN_ACTUAL.trab.reduce((s,t)=>s+(Number(t.plantas)||0),0);
-    total=plantas*(Number(ADMIN_ACTUAL.valor)||0);
-    detalle=plantas.toLocaleString('es-CL')+' plantas × '+dinero(ADMIN_ACTUAL.valor);
+    const plantas=ADMIN_ACTUAL.trab.reduce((s,t)=>s+(Number(t.unidades)||0),0);
+    detalle=plantas.toLocaleString('es-CL')+' plantas'+(ADMIN_ACTUAL.valor!=null ? ' × '+dinero(ADMIN_ACTUAL.valor) : '');
   }else if(ADMIN_ACTUAL.tipo==='dia'){
-    total=ADMIN_ACTUAL.trab.reduce((s,t)=>s+Math.round((Number(t.jornada)||1)*(Number(ADMIN_ACTUAL.valor)||0)),0);
-    detalle=ADMIN_ACTUAL.trab.length+' trabajador(es) · '+dinero(ADMIN_ACTUAL.valor)+' la jornada completa';
-  }else{
-    total=0;
+    detalle=ADMIN_ACTUAL.trab.length+' trabajador(es)'+(ADMIN_ACTUAL.valor!=null ? ' · '+dinero(ADMIN_ACTUAL.valor)+' la jornada completa' : '');
+  }else if(ADMIN_ACTUAL.tipo==='asistencia'){
     detalle=ADMIN_ACTUAL.trab.length+' trabajador(es) presentes · sin valor asociado';
+  }else{
+    detalle=ADMIN_ACTUAL.trab.length+' línea(s) con tipos de pago distintos';
   }
   cont.innerHTML='<div class="total-folio">'+
     '<div class="tf-label">Total del folio</div>'+
@@ -1238,29 +1343,55 @@ function pintarTotalFolioAdmin(){
     '<div class="tf-detalle">'+detalle+'</div></div>'+
     '</div>';
 }
-function guardarEdicionAdmin(){
-  Object.assign(ADMIN_ACTUAL, {
-    supervisor:document.getElementById('adEncargado').value,
-    contratista:document.getElementById('adContratista').value,
-    cuartel:document.getElementById('adCuartel').value,
-    jornada:document.getElementById('adJornada').value,
-    labor:document.getElementById('adLabor').value,
-    obs:document.getElementById('adObs').value
-  });
-  alert('Cambios guardados en este folio (maqueta) — el dato final queda así, sin historial de la versión anterior.');
+
+// Trae de nuevo este folio ya actualizado desde la base y refresca la pantalla.
+async function refrescarDetalleAdmin(id){
+  const {data, error}=await sb.from('terrenokizeo_folios').select('*, terrenokizeo_folio_lineas(*)').eq('id', id).single();
+  if(error || !data) return;
+  const mapeado=mapearFolioReal(data);
+  const idx=FOLIOS_ADMIN.findIndex(f=>f.id===id);
+  if(idx>=0) FOLIOS_ADMIN[idx]=mapeado; else FOLIOS_ADMIN.push(mapeado);
+  abrirDetalleAdmin(id);
 }
-function accionAdmin(estado){
-  ADMIN_ACTUAL.estado=estado;
-  if(estado==='aprobado'){
-    // Esta es la fecha que después arma el archivo de pago del día — no la fecha del trabajo.
-    ADMIN_ACTUAL.fechaAprobacion=hoyISO();
-    ADMIN_ACTUAL.horaAprobacion=new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit',hour12:false});
+
+async function guardarEdicionAdmin(){
+  if(!ADMIN_ACTUAL) return;
+  const nuevaObs=document.getElementById('adObs').value;
+  const {error:e1}=await sb.from('terrenokizeo_folios').update({observaciones:nuevaObs}).eq('id', ADMIN_ACTUAL.id);
+
+  // Cuartel, labor y jornada solo se pueden editar parejos cuando el folio tiene
+  // una sola combinación (folios de Supervisor). En un Administrativo con varias
+  // líneas distintas, esos campos quedan de solo lectura para no mezclar todo.
+  let e2=null;
+  if(ADMIN_ACTUAL.tipoFormulario==='supervisor'){
+    const ccId=MAP_CC_ID[document.getElementById('adCuartel').value];
+    const laborId=MAP_LABOR_ID[document.getElementById('adLabor').value];
+    const nuevaJornada=document.getElementById('adJornada').value;
+    const cambios={};
+    if(ccId) cambios.centro_costo_id=ccId;
+    if(laborId) cambios.labor_id=laborId;
+    if(nuevaJornada) cambios.jornada=Number(nuevaJornada);
+    if(Object.keys(cambios).length){
+      const r=await sb.from('terrenokizeo_folio_lineas').update(cambios).eq('folio_id', ADMIN_ACTUAL.id);
+      e2=r.error;
+    }
   }
+
+  if(e1 || e2){ alert('No se pudieron guardar todos los cambios. Revisa la conexión e inténtalo de nuevo.'); return; }
+  alert('Cambios guardados en este folio — el dato final queda así, sin historial de la versión anterior.');
+  await refrescarDetalleAdmin(ADMIN_ACTUAL.id);
+}
+
+async function accionAdmin(estado){
+  if(!ADMIN_ACTUAL) return;
+  const {error}=await sb.from('terrenokizeo_folios').update({estado}).eq('id', ADMIN_ACTUAL.id);
+  if(error){ alert('No se pudo actualizar el folio. Revisa la conexión e inténtalo de nuevo.'); return; }
   alert(estado==='aprobado'
-    ? 'Folio aprobado. Queda fechado hoy ('+fechaLegible(ADMIN_ACTUAL.fechaAprobacion)+') para el archivo de pago del día.'
+    ? 'Folio aprobado. Queda fechado hoy para el archivo de pago del día.'
     : 'Folio anulado — queda visible marcado como Anulado.');
   ir('p-admin-lista');
   filtrarAdmin(estado);
+  cargarConteosAdmin();
 }
 
 const CUARTELES_CERRILLO = ['C01','C02','C03','C04','C05','C06','C07','C08','C09','C10','C11','C12','C13','C14','C15','C19','C20','C21','C22','C23'];
