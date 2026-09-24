@@ -350,13 +350,10 @@
       <h1 class="tit">Iniciar sesión</h1>
       <p class="desc">Con tu correo y contraseña. La sesión queda guardada en este teléfono, así que no necesitas volver a iniciarla en el campo aunque no haya señal.</p>
       <label>Correo</label>
-      <input type="email" placeholder="nombre@agricolasanjose.cl">
+      <input type="email" id="inputCorreo" placeholder="nombre@agricolasanjose.cl" autocomplete="username">
       <label>Contraseña</label>
-      <input type="password" placeholder="••••••••">
-      <button class="btn btn-primario" onclick="entrarComoSupervisor()">Ingresar</button>
-      <p style="text-align:center;margin-top:16px">
-        <a onclick="entrarComoMaestro()" style="color:var(--gris);font-size:12.5px;cursor:pointer">Acceso maestro (Felipe Bustamante) →</a>
-      </p>
+      <input type="password" id="inputClave" placeholder="••••••••" autocomplete="current-password">
+      <button class="btn btn-primario" id="btnIngresar" onclick="iniciarSesion()">Ingresar</button>
     </div>
   </div>
 
@@ -2258,22 +2255,38 @@ function pintarBannerBorradorAdm(){
     : '';
 }
 
-// ===== ROL DEL USUARIO =====
-// En producción esto sale de la tabla `usuarios` de Supabase (rol: supervisor | administrador | maestro).
-// Acá se simula según por dónde entró: login normal = supervisor, acceso maestro = administrador.
+// ===== ROL DEL USUARIO: viene de la cuenta real que inició sesión =====
 let ROL_ACTUAL='supervisor';
+let USUARIO_ACTUAL=null; // fila de terrenokizeo_usuarios de quien inició sesión
 
 function esAdministrador(){ return ROL_ACTUAL==='administrador' || ROL_ACTUAL==='maestro'; }
 
-function entrarComoSupervisor(){
-  ROL_ACTUAL='supervisor';
-  aplicarRol();
-  ir('p-tipo');
-}
-function entrarComoMaestro(){
-  ROL_ACTUAL='maestro';
-  aplicarRol();
-  ir('p-admin-lista');
+async function iniciarSesion(){
+  const correo=document.getElementById('inputCorreo').value.trim();
+  const clave=document.getElementById('inputClave').value;
+  if(!correo || !clave){ alert('Completa tu correo y tu contraseña.'); return; }
+
+  const btn=document.getElementById('btnIngresar');
+  btn.disabled=true; btn.textContent='Ingresando…';
+  try{
+    const {data, error}=await sb.auth.signInWithPassword({email:correo, password:clave});
+    if(error) throw new Error('Correo o contraseña incorrectos.');
+
+    const {data:perfil, error:e2}=await sb.from('terrenokizeo_usuarios').select('*').eq('auth_user_id', data.user.id).single();
+    if(e2 || !perfil) throw new Error('Tu cuenta existe pero todavía no está vinculada a ningún perfil de la app. Avisa a Felipe.');
+    if(!perfil.activo) throw new Error('Tu cuenta está desactivada.');
+
+    USUARIO_ACTUAL=perfil;
+    ROL_ACTUAL=perfil.rol;
+    aplicarRol();
+    document.getElementById('inputCorreo').value='';
+    document.getElementById('inputClave').value='';
+    ir(esAdministrador() ? 'p-admin-lista' : 'p-tipo');
+  }catch(e){
+    alert('No se pudo iniciar sesión.\n\n'+e.message);
+  }finally{
+    btn.disabled=false; btn.textContent='Ingresar';
+  }
 }
 
 // Muestra u oculta lo que es solo para administradores
@@ -2283,7 +2296,7 @@ function aplicarRol(){
     el.style.display = admin ? '' : 'none';
   });
   const u=document.getElementById('usuarioActual');
-  if(u) u.textContent = admin ? 'Felipe Bustamante (administrador)' : 'Sergio Rojas (supervisor)';
+  if(u) u.textContent = USUARIO_ACTUAL ? USUARIO_ACTUAL.nombre+' ('+USUARIO_ACTUAL.rol+')' : '';
 }
 
 // ===== Mis folios: lo que el supervisor envió y lo que le quedó pendiente =====
@@ -2605,14 +2618,15 @@ function repetirUltimoFolio(){
 // Cerrar sesión limpia lo que se estaba llenando, pero NO los folios ya guardados
 // en el teléfono: esos son del dispositivo, no de quién esté logueado, y tienen
 // que seguir ahí hasta subir — aunque el celular pase a otro supervisor.
-function cerrarSesion(){
+async function cerrarSesion(){
   const seguir=confirm('¿Cerrar sesión?\n\nLos folios que ya guardaste en este teléfono se quedan guardados y se suben apenas haya señal.');
   if(!seguir) return;
+  await sb.auth.signOut();
   SELECCIONADOS=[]; DATOS_TRAB={};
   LINEAS_ADMIN=[]; LINEA_EDIT=null; LINEA_ADMIN_EDIT=null;
   ADMIN_ACTUAL=null; CONTRATISTA_ACTUAL=null;
   BORRADOR_SUP=null; BORRADOR_ADM=null;  // el borrador es de quien lo estaba llenando
-  ROL_ACTUAL='supervisor'; aplicarRol();
+  USUARIO_ACTUAL=null; ROL_ACTUAL='supervisor'; aplicarRol();
   document.querySelectorAll('#p-acceso input').forEach(i=>i.value='');
   ir('p-acceso');
 }
@@ -2640,6 +2654,22 @@ async function iniciarApp(){
   pintarContratistas();
   refrescarValoresCampos();
   pintarFoliosLocales();
+
+  // Si el teléfono ya tenía una sesión guardada, entra directo sin pedir de nuevo.
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    if(session){
+      const {data:perfil}=await sb.from('terrenokizeo_usuarios').select('*').eq('auth_user_id', session.user.id).single();
+      if(perfil && perfil.activo){
+        USUARIO_ACTUAL=perfil;
+        ROL_ACTUAL=perfil.rol;
+        aplicarRol();
+        ir(esAdministrador() ? 'p-admin-lista' : 'p-tipo');
+        return;
+      }
+    }
+  }catch(e){ console.warn('No se pudo retomar la sesión guardada', e); }
+
   if(typeof aplicarRol==='function') aplicarRol();
   ir('p-acceso');
 }
