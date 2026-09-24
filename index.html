@@ -243,7 +243,7 @@
   .tipo-tarjeta .lab{font-size:14px;font-weight:600}
   .tipo-tarjeta .sub{font-size:11.5px;color:var(--gris)}
 
-  .chip-cu{padding:6px 10px;border-radius:7px;font-size:12px;font-weight:700;border:1px solid}
+  .chip-cu{padding:6px 10px;border-radius:7px;font-size:12px;font-weight:700;border:1px solid;text-align:center;line-height:1.4}
   .cu-aprobado{background:var(--verdeok-bg);border-color:var(--verdeok);color:var(--verdeok)}
   .cu-preliminar{background:var(--ambar-bg);border-color:var(--ambar);color:var(--ambar)}
   .cu-sin{background:var(--gris-campo);border-color:var(--linea-fuerte);color:var(--gris)}
@@ -418,14 +418,12 @@
       <button class="btn" style="padding:9px" onclick="ir('p-admin-lista')">📋 Folios</button>
       <button class="btn btn-primario" style="padding:9px" onclick="ir('p-admin-cuarteles')">🗺️ Avance por cuartel</button>
     </div>
-    <label>Labor</label>
-    <select id="cuLabor" onchange="pintarCuarteles()">
-      <option>Reparar y tensar alambre</option>
-      <option>Poda</option>
-      <option>Hoyadura</option>
-    </select>
+    <label>Grupo Centro Costo</label>
+    <select id="cuGrupoCC" onchange="cargarAvanceCuarteles()"></select>
+    <label style="margin-top:10px">Labor</label>
+    <select id="cuLabor" onchange="cargarAvanceCuarteles()"></select>
     <div class="seccion">
-      <div class="titulo-seccion">Estado de los cuarteles — El Cerrillo</div>
+      <div class="titulo-seccion" id="tituloAvanceCuarteles">Estado de los cuarteles</div>
       <p class="desc" id="leyendaCuarteles" style="margin-bottom:12px"></p>
       <div id="gridCuarteles" style="display:flex;flex-wrap:wrap;gap:6px"></div>
     </div>
@@ -877,7 +875,7 @@ function construirEstructuras(contratistas, personal, labores, centros, usuarios
     MAP_CC_ID[c.nombre]=c.id;
     MAP_CC_NOMBRE[c.id]=c.nombre;
     MAP_CC_GRUPO[c.id]=c.grupo;
-    CODIGOS_CENTRO_COSTO[c.nombre]={codigo:c.codigo, variedad:c.variedad||''};
+    CODIGOS_CENTRO_COSTO[c.nombre]={codigo:c.codigo, variedad:c.variedad||'', limitePlantas:c.limite_plantas};
   });
 
   SUPERVISORES=[]; ADMINISTRADORES=[]; MAP_USUARIO_ID={}; MAP_USUARIO_NOMBRE={};
@@ -1284,7 +1282,7 @@ function ir(id){
     document.getElementById('barraLinea').style.display='block';
   }
   if(id==='p-admin-lista'){ atras.style.visibility='visible'; titulo.textContent='Bandeja de folios'; sub.textContent='Vista administrador'; document.getElementById('bloqueExportar').style.display = ADMIN_FILTRO==='aprobado' ? 'block' : 'none'; cargarConteosAdmin(); cargarFoliosAdmin(ADMIN_FILTRO); }
-  if(id==='p-admin-cuarteles'){ atras.style.visibility='visible'; titulo.textContent='Avance por cuartel'; sub.textContent='Vista administrador'; pintarCuarteles(); }
+  if(id==='p-admin-cuarteles'){ atras.style.visibility='visible'; titulo.textContent='Avance por cuartel'; sub.textContent='Vista administrador'; iniciarPantallaAvance(); }
   if(id==='p-admin-detalle'){ atras.style.visibility='visible'; titulo.textContent='Folio N° '+ADMIN_ACTUAL.folio; sub.textContent=ADMIN_ACTUAL.contratista; }
 }
 document.getElementById('btnAtras').onclick=()=>{
@@ -1304,8 +1302,12 @@ document.getElementById('btnAtras').onclick=()=>{
 
 // Límite de plantas por cuartel — en producción vendría del maestro de cuarteles (N° de plantas plantadas).
 // Estos son valores de ejemplo para la maqueta.
-const LIMITE_PLANTAS_CUARTEL={'C09':5000,'P06':3200,'C27':2400,'C11':2800};
-function limitePlantasCuartel(cuartel){ return LIMITE_PLANTAS_CUARTEL[cuartel] || 3000; }
+// El límite real de plantas por cuartel, cargado desde Supabase (archivo de Liliana).
+// Si un cuartel no tiene el dato cargado, se avisa en vez de inventar un número.
+function limitePlantasCuartel(cuartel){
+  const info=CODIGOS_CENTRO_COSTO[cuartel];
+  return info && info.limitePlantas!=null ? info.limitePlantas : null;
+}
 function totalPlantasFolioAdmin(f){
   if(f.tipo!=='trato') return 0;
   return f.trab.reduce((s,t)=>s+(Number(t.plantas)||0),0);
@@ -1315,6 +1317,7 @@ function totalPlantasFolioAdmin(f){
 async function pintarAvisoLimitePlantas(){
   const cont=document.getElementById('avisoLimitePlantas');
   if(!ADMIN_ACTUAL || ADMIN_ACTUAL.tipo!=='trato'){ cont.innerHTML=''; return; }
+  const folioIdAlAbrir=ADMIN_ACTUAL.id;  // si el usuario abre otro folio antes de que esto termine, no se pisa
   const cuartel=ADMIN_ACTUAL.cuartel;
   const ccId=MAP_CC_ID[cuartel];
   if(!ccId){ cont.innerHTML='<p class="fc-nota">Este folio tiene más de un cuartel — el control de límite no aplica acá.</p>'; return; }
@@ -1331,13 +1334,19 @@ async function pintarAvisoLimitePlantas(){
     yaAprobadas=(data||[]).reduce((s,r)=>s+(Number(r.unidades)||0),0);
   }catch(e){
     console.warn('No se pudo revisar el límite de plantas', e);
-    cont.innerHTML='<p class="desc">No se pudo revisar el límite del cuartel (sin conexión).</p>';
+    if(ADMIN_ACTUAL && ADMIN_ACTUAL.id===folioIdAlAbrir) cont.innerHTML='<p class="desc">No se pudo revisar el límite del cuartel (sin conexión).</p>';
     return;
   }
+  if(!ADMIN_ACTUAL || ADMIN_ACTUAL.id!==folioIdAlAbrir) return;  // el usuario ya abrió otro folio mientras esto cargaba
   const limite=limitePlantasCuartel(cuartel);
   const esteFolio=ADMIN_ACTUAL.trab.filter(t=>t.tipo==='trato').reduce((s,t)=>s+(Number(t.unidades)||0),0);
   const total=yaAprobadas+esteFolio;
-  const pct=limite ? Math.round(total/limite*100) : 0;
+  if(limite==null){
+    cont.innerHTML='<p class="fc-nota">Cuartel '+cuartel+': no hay límite de plantas cargado para este cuartel — no se puede revisar el exceso. '+
+      yaAprobadas.toLocaleString('es-CL')+' plantas ya aprobadas + '+esteFolio.toLocaleString('es-CL')+' de este folio.</p>';
+    return;
+  }
+  const pct=Math.round(total/limite*100);
   const excede=total>limite;
   const estiloOk='background:var(--verdeok-bg);border-color:var(--verdeok);color:var(--verdeok)';
   cont.innerHTML='<div class="aviso-dup" style="'+(excede?'':estiloOk)+'">'+
@@ -1468,24 +1477,68 @@ async function accionAdmin(estado){
   cargarConteosAdmin();
 }
 
-const CUARTELES_CERRILLO = ['C01','C02','C03','C04','C05','C06','C07','C08','C09','C10','C11','C12','C13','C14','C15','C19','C20','C21','C22','C23'];
-function pintarCuarteles(){
-  const labor=document.getElementById('cuLabor').value;
-  // datos de ejemplo: se derivan de los folios (misma idea que en Labores, cruzando aprobado/preliminar por cuartel)
-  const porLabor = {
-    'Reparar y tensar alambre': {aprobado:['C01','C04','C05','C13','C14','C19'], preliminar:['C09','C20']},
-    'Poda': {aprobado:['C02','C03','C21','C22'], preliminar:['C27','C23']},
-    'Hoyadura': {aprobado:[], preliminar:['C06','C07','C08']}
-  };
-  const d=porLabor[labor]||{aprobado:[],preliminar:[]};
+// Solo se llenan los selects la primera vez que se entra a esta pantalla en la sesión.
+function iniciarPantallaAvance(){
+  const selGrupo=document.getElementById('cuGrupoCC');
+  if(!selGrupo.options.length){
+    selGrupo.innerHTML=Object.keys(CENTROS_COSTO).map(g=>'<option>'+g+'</option>').join('');
+    const selLabor=document.getElementById('cuLabor');
+    selLabor.innerHTML=(LABOR_DATA['Campo']||[]).map(l=>'<option>'+l.label+'</option>').join('');
+  }
+  cargarAvanceCuarteles();
+}
+
+// Trae de la base real cuántas plantas de esa labor están aprobadas (o preliminares)
+// en cada cuartel del grupo elegido, y arma el mosaico de estado + plantas.
+async function cargarAvanceCuarteles(){
+  const grupo=document.getElementById('cuGrupoCC').value;
+  const laborNombre=document.getElementById('cuLabor').value;
+  const laborId=MAP_LABOR_ID[laborNombre];
+  document.getElementById('tituloAvanceCuarteles').textContent='Estado de los cuarteles — '+grupo;
   const grid=document.getElementById('gridCuarteles');
-  let nAp=0,nPre=0,nSin=0;
-  grid.innerHTML=CUARTELES_CERRILLO.map(cu=>{
-    let clase='cu-sin'; if(d.aprobado.includes(cu)){clase='cu-aprobado';nAp++;} else if(d.preliminar.includes(cu)){clase='cu-preliminar';nPre++;} else nSin++;
-    return '<span class="chip-cu '+clase+'">'+cu+'</span>';
+  grid.innerHTML='<p class="desc">Cargando…</p>';
+
+  // Solo los centros que son cuarteles de campo de verdad (tienen variedad), no
+  // los genéricos como "Baños" o "Bodega" que no tienen avance de plantas.
+  const cuarteles=(CENTROS_COSTO[grupo]||[]).filter(n=>(CODIGOS_CENTRO_COSTO[n]||{}).variedad);
+  if(!cuarteles.length || !laborId){ grid.innerHTML='<p class="desc">No hay cuarteles de campo en este grupo.</p>'; return; }
+  const idsCuarteles=cuarteles.map(n=>MAP_CC_ID[n]).filter(Boolean);
+
+  let filas=[];
+  try{
+    const {data, error}=await sb.from('terrenokizeo_folio_lineas')
+      .select('centro_costo_id, unidades, terrenokizeo_folios!inner(estado)')
+      .eq('labor_id', laborId)
+      .in('centro_costo_id', idsCuarteles);
+    if(error) throw error;
+    filas=data||[];
+  }catch(e){
+    console.warn('No se pudo cargar el avance por cuartel', e);
+    grid.innerHTML='<p class="desc">No se pudo conectar con el servidor.</p>';
+    return;
+  }
+
+  let nAp=0, nPre=0, nSin=0;
+  grid.innerHTML=cuarteles.map(nombreCuartel=>{
+    const ccId=MAP_CC_ID[nombreCuartel];
+    const propias=filas.filter(f=>f.centro_costo_id===ccId && f.terrenokizeo_folios.estado!=='anulado');
+    const plantasAprobadas=propias.filter(f=>f.terrenokizeo_folios.estado==='aprobado').reduce((s,f)=>s+(Number(f.unidades)||0),0);
+    let clase='cu-sin';
+    if(propias.some(f=>f.terrenokizeo_folios.estado==='aprobado')){ clase='cu-aprobado'; nAp++; }
+    else if(propias.some(f=>f.terrenokizeo_folios.estado==='preliminar')){ clase='cu-preliminar'; nPre++; }
+    else nSin++;
+    const limite=limitePlantasCuartel(nombreCuartel);
+    const detalle = plantasAprobadas>0 ? plantasAprobadas.toLocaleString('es-CL')+'/'+(limite!=null?limite.toLocaleString('es-CL'):'—') : '';
+    const tituloChip = limite!=null
+      ? nombreCuartel+': '+plantasAprobadas.toLocaleString('es-CL')+' de '+limite.toLocaleString('es-CL')+' plantas aprobadas'
+      : nombreCuartel+': sin límite de plantas cargado';
+    return '<span class="chip-cu '+clase+'" title="'+tituloChip+'">'+
+      nombreCuartel+(detalle?'<br><small style="font-weight:400">'+detalle+'</small>':'')+
+      '</span>';
   }).join('');
   document.getElementById('leyendaCuarteles').innerHTML =
-    '🟢 Aprobados ('+nAp+') · 🟠 Preliminares, esperando revisión ('+nPre+') · ⚪ Sin trabajo ('+nSin+')';
+    '🟢 Aprobados ('+nAp+') · 🟠 Preliminares, esperando revisión ('+nPre+') · ⚪ Sin trabajo ('+nSin+')'+
+    '<br><span style="font-size:11px">Las plantas mostradas son las de folios aprobados. El límite es el real de plantación (archivo de Liliana) — algunos cuarteles todavía no tienen ese dato cargado.</span>';
 }
 
 // ===== Vista PDF del folio =====
