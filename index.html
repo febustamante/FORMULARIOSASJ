@@ -1761,7 +1761,7 @@ function pintarLineasAdmin(){
 
 let GUARDANDO_ADMIN=false;
 
-function guardarFolioAdmin(){
+async function guardarFolioAdmin(){
   if(GUARDANDO_ADMIN) return;
   GUARDANDO_ADMIN=true;
   const btn=document.querySelector('#barraGuardarAdm .btn');
@@ -1774,6 +1774,21 @@ function guardarFolioAdmin(){
   if(!document.getElementById('selGrupoCentroAdm').value) errores.push('Falta el Grupo Centro Costo.');
   if(!LINEAS_ADMIN.length) errores.push('El folio no tiene ninguna línea de personal.');
   if(errores.length){ alert('No se puede guardar todavía:\n\n· '+errores.join('\n· ')); soltar(); return; }
+
+  const fechaChequeo=document.getElementById('fechaFolioAdm').value;
+  const encargadoChequeo=document.getElementById('selEncargadoAdm').value;
+  const encargadoIdChequeo=MAP_USUARIO_ID[encargadoChequeo];
+  if(encargadoIdChequeo){
+    try{
+      const {data}=await sb.from('terrenokizeo_folios').select('id')
+        .eq('fecha', fechaChequeo).eq('encargado_id', encargadoIdChequeo)
+        .eq('tipo_formulario', 'administrativo').neq('estado', 'anulado');
+      if(data && data.length){
+        const seguir=confirm('Posible folio repetido\n\nYa existe un folio administrativo de '+encargadoChequeo+' cargado el '+fechaLegible(fechaChequeo)+'.\n\nSi es un grupo de personal distinto, continúa. Si te equivocaste, cancela y revisa.');
+        if(!seguir){ soltar(); return; }
+      }
+    }catch(e){ console.warn('No se pudo revisar duplicados en el servidor (sin señal)', e); }
+  }
 
   const uuid=uuidLocal();
   const encargadoNombre=document.getElementById('selEncargadoAdm').value;
@@ -2547,10 +2562,30 @@ function revisarDuplicados(){
   const gemelo=FOLIOS_LOCALES.find(f=>f.fecha===fecha && f.contratista===contratista &&
     f.cuartel===cuartel && f.labor===labor);
   if(gemelo){
-    avisos.push('Ya guardaste un folio de ' + contratista + ' en ' + cuartel + ' por ' + labor + ' el ' + fechaLegible(fecha) + '.');
+    avisos.push('Ya guardaste un folio de ' + contratista + ' en ' + cuartel + ' por ' + labor + ' el ' + fechaLegible(fecha) + ' en este teléfono.');
   }
 
   return avisos;
+}
+
+// Mismo chequeo, pero contra el servidor — para pillar el caso de dos supervisores
+// distintos, desde dos teléfonos distintos, cargando sin querer lo mismo.
+async function revisarDuplicadosServidor(fecha, contratista, cuartel, labor){
+  const contratistaId=MAP_CONTRATISTA_ID[contratista], ccId=MAP_CC_ID[cuartel], laborId=MAP_LABOR_ID[labor];
+  if(!contratistaId || !ccId || !laborId) return [];
+  try{
+    const {data, error}=await sb.from('terrenokizeo_folios')
+      .select('id, terrenokizeo_folio_lineas(centro_costo_id, labor_id)')
+      .eq('fecha', fecha)
+      .eq('contratista_id', contratistaId)
+      .neq('estado', 'anulado');
+    if(error || !data) return [];
+    const hayGemelo=data.some(f=>(f.terrenokizeo_folio_lineas||[]).some(l=>l.centro_costo_id===ccId && l.labor_id===laborId));
+    return hayGemelo ? ['Ya existe un folio subido de ' + contratista + ' en ' + cuartel + ' por ' + labor + ' ese día — puede ser de otro teléfono.'] : [];
+  }catch(e){
+    console.warn('No se pudo revisar duplicados en el servidor (sin señal)', e);
+    return [];
+  }
 }
 
 // Lo que no se puede guardar de ninguna manera
@@ -2578,7 +2613,7 @@ function revisarErrores(){
   return errores;
 }
 
-function guardarFolio(){
+async function guardarFolio(){
   if(GUARDANDO) return;   // el candado se cierra ANTES de cualquier diálogo
   GUARDANDO=true;
   const btn=document.querySelector('#barraGuardar .btn');
@@ -2595,7 +2630,14 @@ function guardarFolio(){
     soltar(); return;
   }
 
-  const avisos=revisarDuplicados();
+  const fechaChequeo=document.getElementById('fechaFolio').value;
+  const contratistaChequeo=document.getElementById('selContratista').value;
+  const cuartelChequeo=document.getElementById('selCentroCosto').value;
+  const laborChequeo=document.getElementById('selLabor').value;
+  const avisos=[
+    ...revisarDuplicados(),
+    ...(await revisarDuplicadosServidor(fechaChequeo, contratistaChequeo, cuartelChequeo, laborChequeo))
+  ];
   if(avisos.length){
     const seguir=confirm('Posible folio repetido\n\n· ' + avisos.join('\n· ') +
       '\n\nSi es un trabajo distinto, continúa. Si te equivocaste, cancela y revisa.');
