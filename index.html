@@ -2556,7 +2556,10 @@ function actualizarResumen(tipo){
   }
 }
 
+let FIRMA_LISTA=false;
 function iniciarFirma(){
+  if(FIRMA_LISTA) return; // ya está armado — volver a "iniciar" cambiaría el tamaño del canvas y borraría lo dibujado
+  FIRMA_LISTA=true;
   const c=document.getElementById('firmaCanvas');
   const ctx=c.getContext('2d');
   const resize=()=>{ const r=c.getBoundingClientRect(); c.width=r.width; c.height=r.height; };
