@@ -943,86 +943,143 @@ async function subirFolioLocal(item){
     item.estado='subido';
     item.folio=data ? data.correlativo : null;
     actualizarBadgeSenal(true);
+    guardarFoliosLocalesCache();
     enviarAvisoFolioCreado(item); // el correo se manda recién ahora, que el folio ya subió de verdad
     return true;
   }catch(e){
     console.warn('No se pudo subir el folio '+item.uuid+' (sigue pendiente)', e);
     actualizarBadgeSenal(false);
+    guardarFoliosLocalesCache();
     return false;
   }
 }
 
-// Arma un PDF real (no la vista para imprimir) con los datos del folio,
+// Arma un PDF real, idéntico en formato a la vista "Compartir / Guardar PDF" de la app
+// (mismo encabezado Agrícola San José, misma banda de estado, mismos campos y tabla),
 // listo para mandar como adjunto en el correo automático.
 function construirPdfFolioBase64(d){
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF();
-  const colorBanda = d.colorBanda || [47,107,63];
+  const COLOR_LOGO=[123,45,38];      // #7B2D26 — mismo marrón del logo y de "aprobado"
+  const COLOR_PRELIMINAR=[46,125,70]; // #2E7D46
+  const COLOR_ANULADO=[90,90,90];     // #5A5A5A
+  const colorBanda = d.estado==='aprobado' ? COLOR_LOGO : d.estado==='anulado' ? COLOR_ANULADO : COLOR_PRELIMINAR;
+  const textoBanda = d.estado==='aprobado' ? 'APROBADO' : d.estado==='anulado' ? 'ANULADO' : 'PRELIMINAR';
 
+  // Encabezado: logo de texto "Agrícola / San José" + número de folio
+  doc.setTextColor(COLOR_LOGO[0], COLOR_LOGO[1], COLOR_LOGO[2]);
+  doc.setFont('times','italic'); doc.setFontSize(11);
+  doc.text('Agrícola', 14, 16);
+  doc.setFont('times','bold'); doc.setFontSize(20);
+  doc.text('San José', 14, 25);
+  doc.setFont('helvetica','bolditalic'); doc.setFontSize(11);
+  doc.setTextColor(30,30,30);
+  doc.text('FOLIO: '+(d.correlativo!=null?d.correlativo:'al subir'), 196, 16, {align:'right'});
+
+  // Banda de estado
   doc.setFillColor(colorBanda[0], colorBanda[1], colorBanda[2]);
-  doc.rect(0,0,210,22,'F');
+  doc.rect(14, 30, 182, 9, 'F');
   doc.setTextColor(255,255,255);
-  doc.setFontSize(16);
-  doc.text('Folio N° '+(d.correlativo!=null?d.correlativo:'—'), 14, 14);
-  doc.setFontSize(10);
-  doc.text(d.estadoTexto||'', 196, 14, {align:'right'});
+  doc.setFont('helvetica','bold'); doc.setFontSize(12);
+  doc.text(textoBanda, 105, 36.3, {align:'center'});
 
-  let y=32;
+  // Trazas de registro/aprobación
+  let y=46;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  doc.setTextColor(90,90,90);
+  (d.trazas||[]).forEach(t=>{ doc.text(t, 14, y); y+=5; });
+
+  // Campos del folio
+  y+=3;
   const campo=(label,valor)=>{
-    doc.setTextColor(120,120,120); doc.setFontSize(10); doc.text(label, 14, y);
-    doc.setTextColor(30,30,30); doc.text(String(valor||'—'), 196, y, {align:'right'});
-    y+=7;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10);
+    doc.setTextColor(120,120,120); doc.text(label, 14, y);
+    doc.setTextColor(20,20,20); doc.text(String(valor||'—'), 120, y);
+    y+=6.5;
   };
-  campo('Encargado SAPA', d.encargado);
-  campo('Contratista', d.contratista);
-  campo('Cuartel', d.cuartel);
-  campo('Labor', d.labor);
-  campo('Fecha del trabajo', d.fecha);
-  if(d.fechaAprobacion) campo('Fecha de aprobación', d.fechaAprobacion);
+  campo('Fecha:', d.fecha);
+  campo('Encargado SAPA:', d.encargado);
+  campo('Rut Supervisor SAPA:', d.rutEncargado);
+  campo('Contratista:', d.contratista);
+  campo('Grupo Centro Costo:', d.grupoCentro);
+  campo('Centro Costo:', d.cuartel);
+  campo('Grupo Labor:', d.grupoLabor);
+  campo('Labor:', d.labor);
+  campo('Unidad Labor:', d.unidad);
+  campo('Tipo de pago:', {trato:'Trato',dia:'Día',asistencia:'Asistencia'}[d.tipo] || d.tipo);
+  if(d.tipo==='trato') campo('Valor Unitario Labor:', dineroPdf(d.valorTrato));
+  if(d.tipo==='dia') campo('Valor jornada completa (Día):', dineroPdf(d.valorDia));
+  campo('Jornada del folio:', String(d.jornadaFolio||'').replace('.',','));
+  campo('Observaciones:', d.obs);
 
-  const filas=(d.trab||[]).map(t=>{
-    let dato, monto;
-    if(t.tipo==='trato'){ dato=(Number(t.unidades)||0).toLocaleString('es-CL')+' plantas'; monto='$'+((Number(t.unidades)||0)*(Number(t.valorUnitario)||0)).toLocaleString('es-CL'); }
-    else if(t.tipo==='dia'){ dato='jornada '+String(t.jornada||1).replace('.',','); monto='$'+Math.round((Number(t.jornada)||1)*(Number(t.valorUnitario)||0)).toLocaleString('es-CL'); }
-    else { dato='presente'; monto='—'; }
-    return [t.nom||'', dato, monto];
+  // Recuadro de firma (vacío en el correo — no se manda la firma dibujada)
+  doc.setDrawColor(180,180,180);
+  doc.rect(140, 46, 56, 34);
+  doc.setFontSize(8); doc.setTextColor(120,120,120);
+  doc.text('Firma Encargado SAPA', 168, 84, {align:'center'});
+
+  // Cantidad de registros
+  y=Math.max(y,90)+4;
+  doc.setFillColor(colorBanda[0], colorBanda[1], colorBanda[2]);
+  doc.rect(14, y, 182, 7, 'F');
+  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+  doc.text((d.trab||[]).length+' Registro(s)', 105, y+5, {align:'center'});
+  y+=10;
+
+  // Tabla de trabajadores, igual a la del PDF original
+  const filas=(d.trab||[]).map((t,i)=>{
+    let unidMostrar='—', costoMostrar='—';
+    if(t.tipo==='trato'){ unidMostrar=(Number(t.unidades)||0).toFixed(2); costoMostrar=dineroPdf((Number(t.unidades)||0)*(Number(t.valorUnitario)||0)); }
+    else if(t.tipo==='dia'){ costoMostrar=dineroPdf(Math.round((Number(t.jornada)||1)*(Number(t.valorUnitario)||0))); }
+    return [i+1, t.nom||'', t.rut||'', String(t.jornada||'1').replace('.',','), unidMostrar, costoMostrar];
   });
+  let totalUnid=0, totalCosto=0;
+  (d.trab||[]).forEach(t=>{
+    if(t.tipo==='trato'){ totalUnid+=Number(t.unidades)||0; totalCosto+=(Number(t.unidades)||0)*(Number(t.valorUnitario)||0); }
+    else{
+      totalUnid+=1; // igual que en la hoja original: cada trabajador cuenta 1, aunque su fila muestre "—"
+      if(t.tipo==='dia') totalCosto+=Math.round((Number(t.jornada)||1)*(Number(t.valorUnitario)||0));
+    }
+  });
+
   doc.autoTable({
-    startY: y+3,
-    head: [['Trabajador','Detalle','Monto']],
+    startY: y,
+    head: [['N°','NOMBRE TRABAJADOR','RUT','JORNADA','UNIDADES','COSTO TRABAJADOR']],
     body: filas,
-    theme: 'striped',
-    headStyles: {fillColor: colorBanda},
-    styles: {fontSize:9}
+    foot: [['', 'TOTAL', '', '', totalUnid.toFixed(2), dineroPdf(totalCosto)]],
+    theme: 'grid',
+    headStyles: {fillColor: colorBanda, fontSize:8},
+    footStyles: {fillColor:[235,235,235], textColor:[20,20,20], fontStyle:'bold'},
+    styles: {fontSize:8.5},
+    columnStyles: {0:{halign:'center',cellWidth:10}, 3:{halign:'center'}, 4:{halign:'center'}, 5:{halign:'right'}}
   });
 
-  if(d.total!=null){
-    const yFinal=(doc.lastAutoTable ? doc.lastAutoTable.finalY : y+10)+8;
-    doc.setFontSize(11);
-    doc.setTextColor(30,30,30);
-    doc.text('Total: $'+Number(d.total).toLocaleString('es-CL'), 196, yFinal, {align:'right'});
-  }
+  const yPie=(doc.lastAutoTable ? doc.lastAutoTable.finalY : y+10)+8;
+  doc.setFontSize(8); doc.setTextColor(140,140,140);
+  doc.text('Página 1 de 1', 196, yPie, {align:'right'});
 
   return doc.output('datauristring').split(',')[1];
 }
+function dineroPdf(n){ return '$'+(Number(n)||0).toLocaleString('es-CL'); }
 
 // El aviso nunca debe frenar ni hacer fallar la subida del folio en sí —
 // si el correo falla, solo queda un aviso en consola.
 function enviarAvisoFolioCreado(item){
   const trab=(item.payload.lineasRows||[]).map(l=>({
-    nom:l.nombre_trabajador, tipo:l.tipo_pago, valorUnitario:l.valor_unitario, jornada:l.jornada, unidades:l.unidades
+    nom:l.nombre_trabajador, rut:l.rut_trabajador, tipo:l.tipo_pago, valorUnitario:l.valor_unitario, jornada:l.jornada, unidades:l.unidades
   }));
-  let total=0;
-  trab.forEach(t=>{
-    if(t.tipo==='trato') total += (Number(t.unidades)||0)*(Number(t.valorUnitario)||0);
-    else if(t.tipo==='dia') total += Math.round((Number(t.jornada)||1)*(Number(t.valorUnitario)||0));
-  });
   let pdfBase64=null;
   try{
     pdfBase64=construirPdfFolioBase64({
-      correlativo:item.folio, estadoTexto:'PRELIMINAR', colorBanda:[47,107,63],
-      encargado:item.encargado, contratista:item.contratista, cuartel:item.cuartel, labor:item.labor,
-      fecha: item.fecha?fechaLegible(item.fecha):'', trab, total
+      correlativo:item.folio, estado:'preliminar',
+      trazas:['Registrado por '+item.encargado+' el '+new Date().toLocaleString('es-CL')+'.',
+        item.folio ? '' : 'Sin subir todavía — el número de folio se asigna al llegar al servidor'].filter(Boolean),
+      encargado:item.encargado, rutEncargado:item.rutEncargado,
+      contratista:item.contratista, grupoCentro:item.grupoCentro, cuartel:item.cuartel,
+      grupoLabor:item.grupoLabor, labor:item.labor, unidad:item.unidad,
+      tipo:item.tipo, valorTrato:item.valorTrato, valorDia:item.valorDia,
+      jornadaFolio:item.jornadaFolio, obs:item.obs,
+      fecha: item.fecha?fechaLegible(item.fecha):'', trab
     });
   }catch(e){ console.warn('No se pudo armar el PDF adjunto', e); }
 
@@ -1170,6 +1227,7 @@ function mapearFolioReal(row){
     fechaAprobacion: row.fecha_aprobacion,
     trab: lineas.map(l=>({
       nom: l.nombre_trabajador,
+      rut: l.rut_trabajador,
       tipo: l.tipo_pago,
       valorUnitario: l.valor_unitario,
       jornada: l.jornada,
@@ -1579,12 +1637,23 @@ function enviarAvisoFolioAprobado(folio){
     else if(t.tipo==='dia') total += Math.round((Number(t.jornada)||1)*(Number(t.valorUnitario)||0));
   });
   const fechaAprobacionTxt=fechaLegible(hoyISO());
+  const primerTrab=folio.trab[0]||{};
   let pdfBase64=null;
   try{
     pdfBase64=construirPdfFolioBase64({
-      correlativo:folio.folio, estadoTexto:'APROBADO', colorBanda:[200,60,60],
-      encargado:folio.supervisor, contratista:folio.contratista, cuartel:folio.cuartel, labor:folio.labor,
-      fecha: folio.fecha?fechaLegible(folio.fecha):'', fechaAprobacion:fechaAprobacionTxt, trab:folio.trab, total
+      correlativo:folio.folio, estado:'aprobado',
+      trazas:['Registrado por '+folio.supervisor+' · '+folio.hora+'.',
+        'Aprobado el '+fechaAprobacionTxt+' — así entra al archivo de pago.'],
+      encargado:folio.supervisor, rutEncargado:rutPorSupervisor(folio.supervisor),
+      contratista:folio.contratista,
+      grupoCentro: MAP_CC_GRUPO[MAP_CC_ID[folio.cuartel]] || '',
+      cuartel:folio.cuartel,
+      grupoLabor: MAP_LABOR_GRUPO[MAP_LABOR_ID[folio.labor]] || '',
+      labor:folio.labor,
+      unidad: (LABOR_DATA[MAP_LABOR_GRUPO[MAP_LABOR_ID[folio.labor]]]||[]).find(l=>l.label===folio.labor)?.unidad || '',
+      tipo:folio.tipo, valorTrato:primerTrab.valorUnitario, valorDia:primerTrab.valorUnitario,
+      jornadaFolio:primerTrab.jornada, obs:folio.obs,
+      fecha: folio.fecha?fechaLegible(folio.fecha):'', trab:folio.trab
     });
   }catch(e){ console.warn('No se pudo armar el PDF adjunto', e); }
 
@@ -2081,6 +2150,7 @@ async function guardarFolioAdmin(){
     estado: 'pendiente',
     fecha: document.getElementById('fechaFolioAdm').value,
     encargado: encargadoNombre,
+    grupoCentro: document.getElementById('selGrupoCentroAdm').value,
     cuartel: cuarteles.join(' / '),
     labor: labores.join(' / '),
     contratista: CONTRATISTA_ADMIN,
@@ -2088,6 +2158,7 @@ async function guardarFolioAdmin(){
     payload: {folioRow, lineasRows}
   };
   FOLIOS_LOCALES.unshift(registroLocal);
+  guardarFoliosLocalesCache();
 
   alert('Folio administrativo guardado en este teléfono con su identificador único.\nSe está subiendo al servidor — si no hay señal, queda pendiente y se reintenta después.');
 
@@ -2500,6 +2571,19 @@ function limpiarFirma(){
 let CORRELATIVO_SERVIDOR=7302;
 let FOLIOS_LOCALES=[];
 
+// FOLIOS_LOCALES vive en memoria, pero se refleja en el teléfono cada vez que cambia —
+// así un folio guardado sin señal sobrevive a que se cierre la pestaña o se reinicie el teléfono.
+function guardarFoliosLocalesCache(){
+  try{ localStorage.setItem('tk_folios_locales', JSON.stringify(FOLIOS_LOCALES)); }
+  catch(e){ console.warn('No se pudo guardar el respaldo local de folios', e); }
+}
+function restaurarFoliosLocalesCache(){
+  try{
+    const cache=localStorage.getItem('tk_folios_locales');
+    if(cache) FOLIOS_LOCALES=JSON.parse(cache);
+  }catch(e){ console.warn('No se pudo restaurar el respaldo local de folios', e); }
+}
+
 function uuidLocal(){
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{
     const r=Math.random()*16|0; return (c==='x'?r:(r&0x3|0x8)).toString(16);
@@ -2797,7 +2881,10 @@ let ULTIMO_FOLIO=null; // último folio guardado, para "repetir folio"
 
 let GUARDANDO=false; // candado contra el doble toque
 
-function hoyISO(){ return new Date().toISOString().slice(0,10); }
+function hoyISO(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 
 function fijarFechaPorDefecto(id){
   const el=document.getElementById(id);
@@ -2964,13 +3051,23 @@ async function guardarFolio(){
     estado: 'pendiente',
     fecha: document.getElementById('fechaFolio').value,
     encargado: encargadoNombre,
+    rutEncargado: rutPorSupervisor(encargadoNombre),
+    grupoCentro: document.getElementById('selGrupoCentro').value,
     cuartel: cuartelNombre,
+    grupoLabor: document.getElementById('selGrupoLabor').value,
     labor: laborNombre,
+    unidad: (LABOR_DATA[document.getElementById('selGrupoLabor').value]||[]).find(l=>l.label===laborNombre)?.unidad || '',
+    tipo: tipo,
+    valorTrato: document.getElementById('valorTratoInput').value,
+    valorDia: document.getElementById('valorDiaInput').value,
+    jornadaFolio: document.getElementById('selJornada').value,
+    obs: obsTexto,
     contratista: contratistaNombre,
     ruts: [...SELECCIONADOS],
     payload: {folioRow, lineasRows}
   };
   FOLIOS_LOCALES.unshift(registroLocal);
+  guardarFoliosLocalesCache();
 
   alert('Folio guardado en este teléfono con su identificador único.\nSe está subiendo al servidor — si no hay señal, queda pendiente y se reintenta después.');
   BORRADOR_SUP=null;           // el folio se envió: el borrador ya cumplió su función
@@ -3082,6 +3179,7 @@ window.addEventListener('resize', detectarDispositivo);
 async function iniciarApp(){
   const conectado=await cargarCatalogos();
   actualizarBadgeSenal(conectado);
+  restaurarFoliosLocalesCache();
   pintarSupervisores();
   pintarGruposLabor();
   pintarGruposCentro();
