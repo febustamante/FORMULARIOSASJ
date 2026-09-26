@@ -575,11 +575,11 @@
       </div>
       <div id="bloqueTrato" class="fila-campo">
         <div class="fc-label">Valor unitario / planta<span class="req">*</span></div>
-        <div class="fc-control"><input type="number" inputmode="numeric" id="valorTratoInput" placeholder="16" oninput="pintarSeleccionados()"></div>
+        <div class="fc-control"><input type="number" inputmode="numeric" id="valorTratoInput" oninput="pintarSeleccionados()"></div>
       </div>
       <div id="bloqueDia" class="fila-campo" style="display:none">
         <div class="fc-label">Valor jornada completa<span class="req">*</span></div>
-        <div class="fc-control"><input type="number" inputmode="numeric" id="valorDiaInput" placeholder="30000" oninput="pintarSeleccionados()"></div>
+        <div class="fc-control"><input type="number" inputmode="numeric" id="valorDiaInput" oninput="pintarSeleccionados()"></div>
       </div>
       <p class="fc-nota" id="notaValorDia" style="display:none">Se multiplica por la jornada de cada trabajador: 0,5 × este valor = la mitad.</p>
     </div>
@@ -724,13 +724,14 @@
         <div class="segmentado" id="segmentadoAdmin" style="margin:0">
           <button class="on" data-tipo="trato" onclick="elegirTipoAdmin('trato')">Trato</button>
           <button data-tipo="dia" onclick="elegirTipoAdmin('dia')">Diario</button>
+          <button data-tipo="asistencia" onclick="elegirTipoAdmin('asistencia')">Asistencia</button>
         </div>
       </div>
     </div>
 
-    <div class="fila-campo">
+    <div class="fila-campo" id="laBloqueValor">
       <div class="fc-label">Valor Unitario Labor<span class="req">*</span></div>
-      <div class="fc-control"><input type="number" inputmode="numeric" id="laValorUnitario" placeholder="0" oninput="calcularTotalLineaAdmin()"></div>
+      <div class="fc-control"><input type="number" inputmode="numeric" id="laValorUnitario" oninput="calcularTotalLineaAdmin()"></div>
     </div>
 
     <div class="fila-campo tocable" data-select="laJornada" data-titulo="Jornada" onclick="abrirSelectorDeCampo(this)">
@@ -940,12 +941,31 @@ async function subirFolioLocal(item){
     item.estado='subido';
     item.folio=data ? data.correlativo : null;
     actualizarBadgeSenal(true);
+    enviarAvisoFolioCreado(item); // el correo se manda recién ahora, que el folio ya subió de verdad
     return true;
   }catch(e){
     console.warn('No se pudo subir el folio '+item.uuid+' (sigue pendiente)', e);
     actualizarBadgeSenal(false);
     return false;
   }
+}
+
+// El aviso nunca debe frenar ni hacer fallar la subida del folio en sí —
+// si el correo falla, solo queda un aviso en consola.
+function enviarAvisoFolioCreado(item){
+  fetch('https://cmfvnluppvqyqwpfjrbs.supabase.co/functions/v1/aviso-folio-creado', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      folio: item.folio,
+      tipoFormulario: item.tipoFormulario,
+      encargado: item.encargado,
+      contratista: item.contratista,
+      cuartel: item.cuartel,
+      labor: item.labor,
+      fecha: item.fecha ? fechaLegible(item.fecha) : ''
+    })
+  }).catch(e=>console.warn('No se pudo enviar el aviso de folio creado por correo', e));
 }
 
 // ===== Catálogos reales (Labores y Personal), embebidos en la maqueta =====
@@ -1469,12 +1489,34 @@ async function accionAdmin(estado){
   if(!ADMIN_ACTUAL) return;
   const {error}=await sb.from('terrenokizeo_folios').update({estado}).eq('id', ADMIN_ACTUAL.id);
   if(error){ alert('No se pudo actualizar el folio. Revisa la conexión e inténtalo de nuevo.'); return; }
+  if(estado==='aprobado') enviarAvisoFolioAprobado(ADMIN_ACTUAL);
   alert(estado==='aprobado'
     ? 'Folio aprobado. Queda fechado hoy para el archivo de pago del día.'
     : 'Folio anulado — queda visible marcado como Anulado.');
   ir('p-admin-lista');
   filtrarAdmin(estado);
   cargarConteosAdmin();
+}
+
+function enviarAvisoFolioAprobado(folio){
+  let total=0;
+  folio.trab.forEach(t=>{
+    if(t.tipo==='trato') total += (Number(t.unidades)||0)*(Number(t.valorUnitario)||0);
+    else if(t.tipo==='dia') total += Math.round((Number(t.jornada)||1)*(Number(t.valorUnitario)||0));
+  });
+  fetch('https://cmfvnluppvqyqwpfjrbs.supabase.co/functions/v1/aviso-folio-aprobado', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      folio: folio.folio,
+      encargado: folio.supervisor,
+      contratista: folio.contratista,
+      cuartel: folio.cuartel,
+      labor: folio.labor,
+      fechaAprobacion: fechaLegible(hoyISO()),
+      total: total || null
+    })
+  }).catch(e=>console.warn('No se pudo enviar el aviso de folio aprobado por correo', e));
 }
 
 // Solo se llenan los selects la primera vez que se entra a esta pantalla en la sesión.
@@ -1761,8 +1803,10 @@ function abrirEditorLineaAdmin(){
   const selGL=document.getElementById('laGrupoLabor');
   selGL.innerHTML='<option value="">Selecciona un valor</option>'+Object.keys(LABOR_DATA).map(g=>'<option>'+g+'</option>').join('');
   if(existente) selGL.value=existente.grupoLabor;
+  else if(ctx.repetirGrupoLabor) selGL.value=ctx.repetirGrupoLabor;
   pintarLaboresPorGrupoAdmin();
   if(existente) document.getElementById('laLabor').value=existente.labor;
+  else if(ctx.repetirLabor) document.getElementById('laLabor').value=ctx.repetirLabor;
 
   const selJor=document.getElementById('laJornada');
   const jorActual = existente ? existente.jornada : '';
@@ -1791,6 +1835,7 @@ function pintarLaboresPorGrupoAdmin(){
 function elegirTipoAdmin(t){
   document.querySelectorAll('#segmentadoAdmin button').forEach(b=>b.classList.toggle('on', b.dataset.tipo===t));
   document.getElementById('laBloqueUnidades').style.display = t==='trato' ? 'block' : 'none';
+  document.getElementById('laBloqueValor').style.display = t==='asistencia' ? 'none' : 'block';
   calcularTotalLineaAdmin();
 }
 
@@ -1798,6 +1843,7 @@ function calcularTotalLineaAdmin(){
   const cont=document.getElementById('laTotalLinea');
   const tipoOn=document.querySelector('#segmentadoAdmin button.on');
   const tipo = tipoOn ? tipoOn.dataset.tipo : 'trato';
+  if(tipo==='asistencia'){ cont.textContent='Presente, sin valor asociado'; return; }
   if(tipo!=='trato'){ cont.textContent=''; return; }
   const unidades=Number(document.getElementById('laUnidades').value)||0;
   const precio=Number(document.getElementById('laValorUnitario').value)||0;
@@ -1821,7 +1867,7 @@ function guardarLineaAdmin(seguirConMismaPersona){
   if(!centroCosto) errores.push('Falta el Centro Costo.');
   if(!labor) errores.push('Falta la Labor.');
   if(!jornada) errores.push('Falta la Jornada.');
-  if(!Number(valorUnitario)) errores.push('Falta el Valor Unitario Labor.');
+  if(!Number(valorUnitario) && tipo!=='asistencia') errores.push('Falta el Valor Unitario Labor.');
   if(tipo==='trato' && !Number(unidades)) errores.push('Faltan las Unidades Trabajadas.');
   if(errores.length){ alert('Revisa esta línea:\n\n· '+errores.join('\n· ')); return; }
 
@@ -1836,8 +1882,9 @@ function guardarLineaAdmin(seguirConMismaPersona){
   LINEA_ADMIN_EDIT=null;
   pintarLineasAdmin();
   if(seguirConMismaPersona){
-    // Sigue con la misma persona: otro cuartel, otra labor, sin volver a buscarla
-    LINEA_ADMIN_EDIT={id:'la'+(CONTADOR_LINEA_ADMIN++), esNueva:true, rut:rut};
+    // Sigue con la misma persona: normalmente repite la misma labor, solo cambia
+    // el cuartel — así que se lleva Grupo Labor y Labor, y se limpia el resto.
+    LINEA_ADMIN_EDIT={id:'la'+(CONTADOR_LINEA_ADMIN++), esNueva:true, rut:rut, repetirGrupoLabor:grupoLabor, repetirLabor:labor};
     abrirEditorLineaAdmin();
   }else if(eraNueva){
     abrirPickerEmpleadoAdmin();
@@ -1948,6 +1995,7 @@ async function guardarFolioAdmin(){
     tipoFormulario: 'administrativo',
     estado: 'pendiente',
     fecha: document.getElementById('fechaFolioAdm').value,
+    encargado: encargadoNombre,
     cuartel: cuarteles.join(' / '),
     labor: labores.join(' / '),
     contratista: CONTRATISTA_ADMIN,
@@ -2368,7 +2416,7 @@ let CORRELATIVO_SERVIDOR=7302;
 let FOLIOS_LOCALES=[];
 
 function uuidLocal(){
-  return 'xxxxxxxx-xxxx-4xxx-yxxx'.replace(/[xy]/g,c=>{
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{
     const r=Math.random()*16|0; return (c==='x'?r:(r&0x3|0x8)).toString(16);
   });
 }
@@ -2830,6 +2878,7 @@ async function guardarFolio(){
     tipoFormulario: 'supervisor',
     estado: 'pendiente',
     fecha: document.getElementById('fechaFolio').value,
+    encargado: encargadoNombre,
     cuartel: cuartelNombre,
     labor: laborNombre,
     contratista: contratistaNombre,
