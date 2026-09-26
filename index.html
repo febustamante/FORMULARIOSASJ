@@ -994,7 +994,8 @@ function construirPdfFolioBase64(d){
   const campo=(label,valor)=>{
     doc.setFont('helvetica','normal'); doc.setFontSize(10);
     doc.setTextColor(120,120,120); doc.text(label, 14, y);
-    doc.setTextColor(20,20,20); doc.text(String(valor||'—'), 120, y);
+    doc.setTextColor(20,20,20);
+    doc.text(String(valor||'—'), 133, y, {align:'right', maxWidth:113});
     y+=6.5;
   };
   campo('Fecha:', d.fecha);
@@ -1012,9 +1013,13 @@ function construirPdfFolioBase64(d){
   campo('Jornada del folio:', String(d.jornadaFolio||'').replace('.',','));
   campo('Observaciones:', d.obs);
 
-  // Recuadro de firma (vacío en el correo — no se manda la firma dibujada)
+  // Recuadro de firma — dibuja la firma real si el supervisor la hizo, si no queda vacío
   doc.setDrawColor(180,180,180);
   doc.rect(140, 46, 56, 34);
+  if(d.firma){
+    try{ doc.addImage(d.firma, 'PNG', 141, 47, 54, 32, undefined, 'FAST'); }
+    catch(e){ console.warn('No se pudo dibujar la firma en el PDF', e); }
+  }
   doc.setFontSize(8); doc.setTextColor(120,120,120);
   doc.text('Firma Encargado SAPA', 168, 84, {align:'center'});
 
@@ -1079,6 +1084,7 @@ function enviarAvisoFolioCreado(item){
       grupoLabor:item.grupoLabor, labor:item.labor, unidad:item.unidad,
       tipo:item.tipo, valorTrato:item.valorTrato, valorDia:item.valorDia,
       jornadaFolio:item.jornadaFolio, obs:item.obs,
+      firma: item.payload.folioRow.firma_url,
       fecha: item.fecha?fechaLegible(item.fecha):'', trab
     });
   }catch(e){ console.warn('No se pudo armar el PDF adjunto', e); }
@@ -1225,6 +1231,7 @@ function mapearFolioReal(row){
     obs: row.observaciones || '',
     estado: row.estado,
     fechaAprobacion: row.fecha_aprobacion,
+    firma: row.firma_url,
     trab: lineas.map(l=>({
       nom: l.nombre_trabajador,
       rut: l.rut_trabajador,
@@ -1653,6 +1660,7 @@ function enviarAvisoFolioAprobado(folio){
       unidad: (LABOR_DATA[MAP_LABOR_GRUPO[MAP_LABOR_ID[folio.labor]]]||[]).find(l=>l.label===folio.labor)?.unidad || '',
       tipo:folio.tipo, valorTrato:primerTrab.valorUnitario, valorDia:primerTrab.valorUnitario,
       jornadaFolio:primerTrab.jornada, obs:folio.obs,
+      firma: folio.firma,
       fecha: folio.fecha?fechaLegible(folio.fecha):'', trab:folio.trab
     });
   }catch(e){ console.warn('No se pudo armar el PDF adjunto', e); }
@@ -3017,6 +3025,8 @@ async function guardarFolio(){
 
   // Payload real para Supabase: el encabezado y una línea por cada trabajador,
   // todas compartiendo el mismo cuartel/labor/tipo de pago del folio.
+  let firmaCapturada=null;
+  try{ firmaCapturada=document.getElementById('firmaCanvas').toDataURL('image/png'); }catch(err){ firmaCapturada=null; }
   const folioRow={
     id: uuid,
     tipo_formulario: 'supervisor',
@@ -3025,6 +3035,7 @@ async function guardarFolio(){
     enviar_a_id: MAP_USUARIO_ID[enviarANombre] || null,
     contratista_id: MAP_CONTRATISTA_ID[contratistaNombre] || null,
     observaciones: obsTexto || null,
+    firma_url: firmaCapturada,
     estado: 'preliminar'
   };
   const lineasRows=SELECCIONADOS.map(rut=>{
