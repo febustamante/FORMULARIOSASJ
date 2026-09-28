@@ -456,18 +456,29 @@
     <div class="seccion" id="opBloquePendientes" style="display:none">
       <div class="titulo-seccion">Cuarteles con Asistencia pendiente</div>
       <p class="desc" id="opSinPendientes" style="display:none">No hay Asistencia pendiente de pago para esta combinación.</p>
-      <div id="opListaCuarteles"></div>
+      <p class="desc" id="opListaCuartelesTxt" style="margin-bottom:0"></p>
     </div>
 
     <div class="seccion" id="opBloqueDatos" style="display:none">
       <div class="titulo-seccion">Datos de la orden</div>
-      <label>Valor por planta</label>
+      <div class="fila" style="gap:10px">
+        <div style="flex:1"><label>Fecha inicio</label><input type="date" id="opFechaInicio"></div>
+        <div style="flex:1"><label>Fecha término</label><input type="date" id="opFechaTermino"></div>
+      </div>
+      <label style="margin-top:10px">Cuarteles y plantas (hasta 5 — las plantas se autocompletan)</label>
+      <div id="opFilasCuarteles"></div>
+
+      <label style="margin-top:10px">Valor por planta</label>
       <input type="number" inputmode="numeric" id="opValor" oninput="opRecalcular()">
       <label style="margin-top:10px">% empresa (margen sobre el valor)</label>
       <input type="number" inputmode="numeric" id="opPct" value="0" oninput="opRecalcular()">
       <div id="opAvisoRepase"></div>
       <div class="resumen" style="margin-top:10px" id="opResumen"></div>
-      <button class="btn btn-primario" style="margin-top:12px" onclick="generarOrdenPago()">🖨️ Generar e imprimir orden</button>
+      <div class="fila" style="margin-top:12px;gap:8px">
+        <button class="btn btn-primario" style="flex:1" onclick="generarOrdenPago(this)">🖨️ Generar e imprimir orden</button>
+        <button class="btn" onclick="iniciarPantallaOrdenes()">Limpiar</button>
+      </div>
+      <p class="desc" id="opProximaOrden" style="margin-top:6px"></p>
       <div id="opMsg" style="margin-top:8px"></div>
     </div>
   </div>
@@ -1814,10 +1825,26 @@ function iniciarPantallaOrdenes(){
     const laboresUnicas=[...new Set(Object.values(LABOR_DATA).flat().map(l=>l.label))].sort();
     document.getElementById('opLabor').innerHTML='<option value="">Selecciona un valor</option>'+laboresUnicas.map(l=>'<option>'+l+'</option>').join('');
   }
+  document.getElementById('opContratista').value='';
+  document.getElementById('opLabor').value='';
+  document.getElementById('opFechaInicio').value='';
+  document.getElementById('opFechaTermino').value='';
+  document.getElementById('opValor').value='';
+  document.getElementById('opPct').value='0';
   document.getElementById('opBloquePendientes').style.display='none';
   document.getElementById('opBloqueDatos').style.display='none';
   document.getElementById('opMsg').innerHTML='';
   cargarResumenGlobalPendientes();
+  mostrarProximaOrden();
+}
+
+async function mostrarProximaOrden(){
+  const el=document.getElementById('opProximaOrden');
+  try{
+    const {data}=await sb.from('terrenokizeo_ordenes_pago').select('n_orden').order('n_orden',{ascending:false}).limit(1);
+    const siguiente=(data && data.length) ? data[0].n_orden+1 : 79;
+    el.textContent='Próxima orden: N° '+siguiente;
+  }catch(e){ el.textContent=''; }
 }
 
 // Todo lo que hay pendiente HOY, de cualquier contratista externo y cualquier labor —
@@ -1882,6 +1909,7 @@ function usarCombinacionPendiente(contratistaNombre, laborNombre){
 
 // Trae, para el contratista+labor elegidos, cuánta Asistencia real está pendiente
 // (aprobada, sin orden todavía) por cuartel de El Cerrillo.
+let ORDENES_PENDIENTES_ACTUAL={};
 async function cargarPendientesOrden(){
   const contratistaNombre=document.getElementById('opContratista').value;
   const laborNombre=document.getElementById('opLabor').value;
@@ -1892,8 +1920,8 @@ async function cargarPendientesOrden(){
   const contratistaId=MAP_CONTRATISTA_ID[contratistaNombre];
   const laborId=MAP_LABOR_ID[laborNombre];
   bloquePend.style.display='block';
-  const cont=document.getElementById('opListaCuarteles');
-  cont.innerHTML='<p class="desc">Cargando…</p>';
+  const txt=document.getElementById('opListaCuartelesTxt');
+  txt.textContent='Cargando…';
 
   let filas=[];
   try{
@@ -1908,47 +1936,64 @@ async function cargarPendientesOrden(){
     filas=data||[];
   }catch(e){
     console.warn('No se pudo cargar lo pendiente de orden de pago', e);
-    cont.innerHTML='<p class="desc">No se pudo conectar con el servidor.</p>';
+    txt.textContent='No se pudo conectar con el servidor.';
     bloqueDatos.style.display='none';
     return;
   }
 
-  // Solo cuarteles de El Cerrillo, agrupando cuántos folios distintos hay pendientes en cada uno.
   const porCuartel={};
   filas.forEach(f=>{
     const nombre=MAP_CC_NOMBRE[f.centro_costo_id];
     if(!nombre || MAP_CC_GRUPO[f.centro_costo_id]!=='El Cerrillo') return;
     (porCuartel[nombre]=porCuartel[nombre]||new Set()).add(f.folio_id);
   });
+  ORDENES_PENDIENTES_ACTUAL=porCuartel;
   const cuartelesConPendiente=Object.keys(porCuartel).sort();
 
   if(!cuartelesConPendiente.length){
-    cont.innerHTML='';
+    txt.textContent='';
     document.getElementById('opSinPendientes').style.display='block';
     bloqueDatos.style.display='none';
     return;
   }
   document.getElementById('opSinPendientes').style.display='none';
-  cont.innerHTML=cuartelesConPendiente.map(nombre=>{
-    const limite=(CODIGOS_CENTRO_COSTO[nombre]||{}).limitePlantas;
-    return '<div class="fila-campo" style="align-items:center">'+
-      '<label style="display:flex;align-items:center;gap:8px;flex:1;margin:0">'+
-        '<input type="checkbox" class="opCuartelChk" data-cuartel="'+nombre+'" onchange="opRecalcular()">'+
-        nombre+' <span style="color:var(--gris);font-size:12px">('+porCuartel[nombre].size+' folio(s) pendiente(s))</span>'+
-      '</label>'+
-      '<input type="number" class="opPlantas" data-cuartel="'+nombre+'" placeholder="plantas" style="width:100px" value="'+(limite!=null?limite:'')+'" oninput="opRecalcular()">'+
-    '</div>';
-  }).join('');
+  txt.textContent=cuartelesConPendiente.map(n=>n+' ('+porCuartel[n].size+' folio(s))').join(' · ');
   bloqueDatos.style.display='block';
+  pintarFilasCuarteles(cuartelesConPendiente);
+  opRecalcular();
+}
+
+// Hasta 5 pares cuartel/plantas, igual que en la planilla vieja — al elegir un cuartel
+// en un selector, sus plantas se llenan solas desde el catálogo real.
+function pintarFilasCuarteles(cuartelesDisponibles){
+  const cont=document.getElementById('opFilasCuarteles');
+  const opciones='<option value="">—</option>'+cuartelesDisponibles.map(n=>'<option>'+n+'</option>').join('');
+  cont.innerHTML=Array.from({length:5}).map((_,i)=>
+    '<div class="fila" style="gap:8px;margin-bottom:6px">'+
+      '<select class="opSelCuartel" data-i="'+i+'" onchange="opCuartelCambio('+i+')" style="flex:1.4">'+opciones+'</select>'+
+      '<input type="number" class="opPlantas" data-i="'+i+'" placeholder="plantas" style="flex:1" oninput="opRecalcular()">'+
+    '</div>'
+  ).join('');
+}
+
+function opCuartelCambio(i){
+  const sel=document.querySelector('.opSelCuartel[data-i="'+i+'"]');
+  const inputPlantas=document.querySelector('.opPlantas[data-i="'+i+'"]');
+  const nombre=sel.value;
+  const limite=nombre ? (CODIGOS_CENTRO_COSTO[nombre]||{}).limitePlantas : null;
+  inputPlantas.value = limite!=null ? limite : '';
   opRecalcular();
 }
 
 function opCuartelesSeleccionados(){
-  return [...document.querySelectorAll('.opCuartelChk:checked')].map(chk=>{
-    const nombre=chk.dataset.cuartel;
-    const plantas=Number(document.querySelector('.opPlantas[data-cuartel="'+nombre+'"]').value)||0;
+  const vistos=new Set();
+  return [...document.querySelectorAll('.opSelCuartel')].map(sel=>{
+    const nombre=sel.value;
+    if(!nombre || vistos.has(nombre)) return null;
+    vistos.add(nombre);
+    const plantas=Number(document.querySelector('.opPlantas[data-i="'+sel.dataset.i+'"]').value)||0;
     return {nombre, id:MAP_CC_ID[nombre], plantas};
-  }).filter(c=>c.plantas>0);
+  }).filter(c=>c && c.plantas>0);
 }
 
 async function opRecalcular(){
@@ -2006,6 +2051,8 @@ async function generarOrdenPago(btn){
       cuarteles: seleccion.map(c=>({centro_costo_id:c.id, nombre:c.nombre, plantas:c.plantas})),
       valor_labor:valor, pct_contratista:pct, costo_empresa:costoEmpresa,
       total_plantas:totalPlantas, total_pagar:totalPagar,
+      fecha_inicio: document.getElementById('opFechaInicio').value || null,
+      fecha_termino: document.getElementById('opFechaTermino').value || null,
       emitida_por: (USUARIO_ACTUAL&&USUARIO_ACTUAL.nombre) || ''
     }).select().single();
     if(error) throw error;
@@ -2026,6 +2073,8 @@ async function generarOrdenPago(btn){
     msg.innerHTML='<span style="color:var(--verdeok)">✓ Orden N° '+orden.n_orden+' generada — '+idsLineas.length+' registro(s) de asistencia quedaron cubiertos, ya no aparecen pendientes.</span>';
     imprimirOrdenPago({...orden, contratistaNombre, laborNombre});
     cargarPendientesOrden();
+    cargarResumenGlobalPendientes();
+    mostrarProximaOrden();
   }catch(e){
     msg.innerHTML='<span style="color:var(--rojo)">No se pudo generar la orden: '+(e.message||e)+'</span>';
   }finally{
@@ -2052,6 +2101,7 @@ function imprimirOrdenPago(o){
     };
     campo('Contratista:', o.contratistaNombre);
     campo('Labor:', o.laborNombre);
+    if(o.fecha_inicio || o.fecha_termino) campo('Período:', (o.fecha_inicio?fechaLegible(o.fecha_inicio):'—')+' al '+(o.fecha_termino?fechaLegible(o.fecha_termino):'—'));
     campo('Fecha de emisión:', fechaLegible(o.fecha_emision||hoyISO()));
     campo('Emitida por:', o.emitida_por);
     campo('Valor por planta:', dinero(o.valor_labor));
