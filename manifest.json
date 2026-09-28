@@ -1,0 +1,15 @@
+{
+  "name": "Agrícola San José - Terreno",
+  "short_name": "Terreno SJ",
+  "description": "Formularios de terreno y aprobación de folios — Agrícola San José",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F7F8FA",
+  "theme_color": "#7B2D26",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
