@@ -341,6 +341,7 @@
     <button class="md-item" data-tab="p-tipo" onclick="irDesdeMenu('p-tipo')"><span class="md-ico">📄</span>Formularios</button>
     <button class="md-item solo-admin" data-tab="p-recepcion" onclick="irDesdeMenu('p-recepcion')"><span class="md-ico">📥</span>Recepción</button>
     <button class="md-item solo-admin" data-tab="p-admin-lista" onclick="irDesdeMenu('p-admin-lista')"><span class="md-ico">✅</span>Aprobar folios</button>
+    <button class="md-item solo-admin" data-tab="p-ordenes-pago" onclick="irDesdeMenu('p-ordenes-pago')"><span class="md-ico">💰</span>Órdenes de pago</button>
     <button class="md-item" data-tab="p-servidor" onclick="irDesdeMenu('p-servidor')"><span class="md-ico">☁️</span>Servidor</button>
   </div>
 
@@ -428,10 +429,51 @@
       <div id="gridCuarteles" style="display:flex;flex-wrap:wrap;gap:6px"></div>
     </div>
     <div class="seccion">
-      <div class="titulo-seccion">Pago semanal — contratistas externos, El Cerrillo</div>
-      <div class="resumen">Ciclo <b>martes a lunes</b>, se paga el <b>jueves</b>. Los folios facturados miércoles o jueves de esa semana se corren al pago siguiente.</div>
-      <div class="resumen" style="margin-top:8px">Esta semana: <b>3 contratistas</b> con folios aprobados listos para incluir en el pago del jueves.</div>
+      <div class="titulo-seccion">Pago a contratistas externos — El Cerrillo</div>
+      <p class="desc" style="margin-bottom:10px">Se arma desde los folios de Asistencia reales, no desde un archivo aparte.</p>
+      <button class="btn btn-primario" onclick="ir('p-ordenes-pago')">💰 Ir a Órdenes de pago</button>
     </div>
+  </div>
+
+  <!-- PANTALLA: ÓRDENES DE PAGO (contratistas externos, El Cerrillo, desde Asistencia real) -->
+  <div class="pantalla" id="p-ordenes-pago">
+    <div class="fila" style="margin-bottom:14px">
+      <button class="btn btn-primario" style="padding:9px" onclick="ir('p-ordenes-pago')">💰 Generar</button>
+      <button class="btn" style="padding:9px" onclick="ir('p-ordenes-historial')">🗂️ Historial</button>
+    </div>
+    <p class="desc" style="margin-bottom:12px">Se arma con los folios de Asistencia ya aprobados de contratistas externos — no hace falta ningún Excel. Al generar la orden, esas líneas dejan de aparecer como pendientes.</p>
+
+    <label>Contratista</label>
+    <select id="opContratista" onchange="cargarPendientesOrden()"><option value="">Selecciona un valor</option></select>
+    <label style="margin-top:10px">Labor</label>
+    <select id="opLabor" onchange="cargarPendientesOrden()"><option value="">Selecciona un valor</option></select>
+
+    <div class="seccion" id="opBloquePendientes" style="display:none">
+      <div class="titulo-seccion">Cuarteles con Asistencia pendiente</div>
+      <p class="desc" id="opSinPendientes" style="display:none">No hay Asistencia pendiente de pago para esta combinación.</p>
+      <div id="opListaCuarteles"></div>
+    </div>
+
+    <div class="seccion" id="opBloqueDatos" style="display:none">
+      <div class="titulo-seccion">Datos de la orden</div>
+      <label>Valor por planta</label>
+      <input type="number" inputmode="numeric" id="opValor" oninput="opRecalcular()">
+      <label style="margin-top:10px">% empresa (margen sobre el valor)</label>
+      <input type="number" inputmode="numeric" id="opPct" value="0" oninput="opRecalcular()">
+      <div id="opAvisoRepase"></div>
+      <div class="resumen" style="margin-top:10px" id="opResumen"></div>
+      <button class="btn btn-primario" style="margin-top:12px" onclick="generarOrdenPago()">🖨️ Generar e imprimir orden</button>
+      <div id="opMsg" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- PANTALLA: HISTORIAL DE ÓRDENES DE PAGO -->
+  <div class="pantalla" id="p-ordenes-historial">
+    <div class="fila" style="margin-bottom:14px">
+      <button class="btn" style="padding:9px" onclick="ir('p-ordenes-pago')">💰 Generar</button>
+      <button class="btn btn-primario" style="padding:9px" onclick="ir('p-ordenes-historial')">🗂️ Historial</button>
+    </div>
+    <div id="listaOrdenesHistorial"></div>
   </div>
 
   <!-- PANTALLA ADMIN: DETALLE / EDICIÓN -->
@@ -1073,10 +1115,11 @@ function enviarAvisoFolioCreado(item){
   const trab=(item.payload.lineasRows||[]).map(l=>({
     nom:l.nombre_trabajador, rut:l.rut_trabajador, tipo:l.tipo_pago, valorUnitario:l.valor_unitario, jornada:l.jornada, unidades:l.unidades
   }));
+  const estadoReal=item.estadoAprobacion || 'preliminar';
   let pdfBase64=null;
   try{
     pdfBase64=construirPdfFolioBase64({
-      correlativo:item.folio, estado:'preliminar',
+      correlativo:item.folio, estado:estadoReal,
       trazas:['Registrado por '+item.encargado+' el '+new Date().toLocaleString('es-CL')+'.',
         item.folio ? '' : 'Sin subir todavía — el número de folio se asigna al llegar al servidor'].filter(Boolean),
       encargado:item.encargado, rutEncargado:item.rutEncargado,
@@ -1100,6 +1143,7 @@ function enviarAvisoFolioCreado(item){
       cuartel: item.cuartel,
       labor: item.labor,
       fecha: item.fecha ? fechaLegible(item.fecha) : '',
+      estado: estadoReal,
       pdfBase64
     })
   }).catch(e=>console.warn('No se pudo enviar el aviso de folio creado por correo', e));
@@ -1442,6 +1486,8 @@ function ir(id){
   }
   if(id==='p-admin-lista'){ atras.style.visibility='visible'; titulo.textContent='Bandeja de folios'; sub.textContent='Vista administrador'; document.getElementById('bloqueExportar').style.display = ADMIN_FILTRO==='aprobado' ? 'block' : 'none'; cargarConteosAdmin(); cargarFoliosAdmin(ADMIN_FILTRO); }
   if(id==='p-admin-cuarteles'){ atras.style.visibility='visible'; titulo.textContent='Avance por cuartel'; sub.textContent='Vista administrador'; iniciarPantallaAvance(); }
+  if(id==='p-ordenes-pago'){ atras.style.visibility='visible'; titulo.textContent='Órdenes de pago'; sub.textContent='Contratistas externos · El Cerrillo'; iniciarPantallaOrdenes(); }
+  if(id==='p-ordenes-historial'){ atras.style.visibility='visible'; titulo.textContent='Órdenes de pago'; sub.textContent='Historial'; cargarHistorialOrdenes(); }
   if(id==='p-admin-detalle'){ atras.style.visibility='visible'; titulo.textContent='Folio N° '+ADMIN_ACTUAL.folio; sub.textContent=ADMIN_ACTUAL.contratista; }
 }
 document.getElementById('btnAtras').onclick=()=>{
@@ -1457,6 +1503,8 @@ document.getElementById('btnAtras').onclick=()=>{
   else if(activa==='p-admin-lista') ir('p-tipo');
   else if(activa==='p-admin-cuarteles') ir('p-tipo');
   else if(activa==='p-admin-detalle') ir('p-admin-lista');
+  else if(activa==='p-ordenes-pago') ir('p-tipo');
+  else if(activa==='p-ordenes-historial') ir('p-ordenes-pago');
 };
 
 // Límite de plantas por cuartel — en producción vendría del maestro de cuarteles (N° de plantas plantadas).
@@ -1743,6 +1791,261 @@ async function cargarAvanceCuarteles(){
   document.getElementById('leyendaCuarteles').innerHTML =
     '🟢 Aprobados ('+nAp+') · 🟠 Preliminares, esperando revisión ('+nPre+') · ⚪ Sin trabajo ('+nSin+')'+
     '<br><span style="font-size:11px">Las plantas mostradas son las de folios aprobados. El límite es el real de plantación (archivo de Liliana) — algunos cuarteles todavía no tienen ese dato cargado.</span>';
+}
+
+// ===== ÓRDENES DE PAGO — contratistas externos, El Cerrillo =====
+// Reemplaza el Excel de Liliana como fuente de "qué está pendiente de pago":
+// ahora se sabe directo de los folios de Asistencia ya aprobados en Terreno.
+function esContratistaExterno(nombre){
+  return (nombre||'').toUpperCase().trim()!=='AGRÍCOLA SAN JOSÉ';
+}
+
+let ORDENES_PANTALLA_LISTA=false;
+function iniciarPantallaOrdenes(){
+  if(!ORDENES_PANTALLA_LISTA){
+    ORDENES_PANTALLA_LISTA=true;
+    const externos=Object.keys(MAP_CONTRATISTA_ID).filter(esContratistaExterno).sort();
+    document.getElementById('opContratista').innerHTML='<option value="">Selecciona un valor</option>'+externos.map(c=>'<option>'+c+'</option>').join('');
+    const laboresUnicas=[...new Set(Object.values(LABOR_DATA).flat().map(l=>l.label))].sort();
+    document.getElementById('opLabor').innerHTML='<option value="">Selecciona un valor</option>'+laboresUnicas.map(l=>'<option>'+l+'</option>').join('');
+  }
+  document.getElementById('opBloquePendientes').style.display='none';
+  document.getElementById('opBloqueDatos').style.display='none';
+  document.getElementById('opMsg').innerHTML='';
+}
+
+// Trae, para el contratista+labor elegidos, cuánta Asistencia real está pendiente
+// (aprobada, sin orden todavía) por cuartel de El Cerrillo.
+async function cargarPendientesOrden(){
+  const contratistaNombre=document.getElementById('opContratista').value;
+  const laborNombre=document.getElementById('opLabor').value;
+  const bloquePend=document.getElementById('opBloquePendientes');
+  const bloqueDatos=document.getElementById('opBloqueDatos');
+  if(!contratistaNombre || !laborNombre){ bloquePend.style.display='none'; bloqueDatos.style.display='none'; return; }
+
+  const contratistaId=MAP_CONTRATISTA_ID[contratistaNombre];
+  const laborId=MAP_LABOR_ID[laborNombre];
+  bloquePend.style.display='block';
+  const cont=document.getElementById('opListaCuarteles');
+  cont.innerHTML='<p class="desc">Cargando…</p>';
+
+  let filas=[];
+  try{
+    const {data, error}=await sb.from('terrenokizeo_folio_lineas')
+      .select('centro_costo_id, folio_id, terrenokizeo_folios!inner(estado, contratista_id)')
+      .eq('tipo_pago','asistencia')
+      .is('orden_pago_id', null)
+      .eq('labor_id', laborId)
+      .eq('terrenokizeo_folios.contratista_id', contratistaId)
+      .eq('terrenokizeo_folios.estado', 'aprobado');
+    if(error) throw error;
+    filas=data||[];
+  }catch(e){
+    console.warn('No se pudo cargar lo pendiente de orden de pago', e);
+    cont.innerHTML='<p class="desc">No se pudo conectar con el servidor.</p>';
+    bloqueDatos.style.display='none';
+    return;
+  }
+
+  // Solo cuarteles de El Cerrillo, agrupando cuántos folios distintos hay pendientes en cada uno.
+  const porCuartel={};
+  filas.forEach(f=>{
+    const nombre=MAP_CC_NOMBRE[f.centro_costo_id];
+    if(!nombre || MAP_CC_GRUPO[f.centro_costo_id]!=='El Cerrillo') return;
+    (porCuartel[nombre]=porCuartel[nombre]||new Set()).add(f.folio_id);
+  });
+  const cuartelesConPendiente=Object.keys(porCuartel).sort();
+
+  if(!cuartelesConPendiente.length){
+    cont.innerHTML='';
+    document.getElementById('opSinPendientes').style.display='block';
+    bloqueDatos.style.display='none';
+    return;
+  }
+  document.getElementById('opSinPendientes').style.display='none';
+  cont.innerHTML=cuartelesConPendiente.map(nombre=>{
+    const limite=(CODIGOS_CENTRO_COSTO[nombre]||{}).limitePlantas;
+    return '<div class="fila-campo" style="align-items:center">'+
+      '<label style="display:flex;align-items:center;gap:8px;flex:1;margin:0">'+
+        '<input type="checkbox" class="opCuartelChk" data-cuartel="'+nombre+'" onchange="opRecalcular()">'+
+        nombre+' <span style="color:var(--gris);font-size:12px">('+porCuartel[nombre].size+' folio(s) pendiente(s))</span>'+
+      '</label>'+
+      '<input type="number" class="opPlantas" data-cuartel="'+nombre+'" placeholder="plantas" style="width:100px" value="'+(limite!=null?limite:'')+'" oninput="opRecalcular()">'+
+    '</div>';
+  }).join('');
+  bloqueDatos.style.display='block';
+  opRecalcular();
+}
+
+function opCuartelesSeleccionados(){
+  return [...document.querySelectorAll('.opCuartelChk:checked')].map(chk=>{
+    const nombre=chk.dataset.cuartel;
+    const plantas=Number(document.querySelector('.opPlantas[data-cuartel="'+nombre+'"]').value)||0;
+    return {nombre, id:MAP_CC_ID[nombre], plantas};
+  }).filter(c=>c.plantas>0);
+}
+
+async function opRecalcular(){
+  const seleccion=opCuartelesSeleccionados();
+  const valor=Number(document.getElementById('opValor').value)||0;
+  const pct=Number(document.getElementById('opPct').value)||0;
+  const costoEmpresa=Math.round(valor*(1+pct/100));
+  const totalPlantas=seleccion.reduce((s,c)=>s+c.plantas,0);
+  const totalPagar=Math.round(totalPlantas*costoEmpresa);
+  document.getElementById('opResumen').innerHTML = seleccion.length
+    ? totalPlantas.toLocaleString('es-CL')+' plantas · costo empresa '+dinero(costoEmpresa)+'/planta · <b>Total a pagar: '+dinero(totalPagar)+'</b>'
+    : '';
+
+  const avisoEl=document.getElementById('opAvisoRepase');
+  avisoEl.innerHTML='';
+  if(!seleccion.length || !valor) return;
+  const contratistaId=MAP_CONTRATISTA_ID[document.getElementById('opContratista').value];
+  const laborId=MAP_LABOR_ID[document.getElementById('opLabor').value];
+  try{
+    const {data:previas}=await sb.from('terrenokizeo_ordenes_pago')
+      .select('n_orden, cuarteles, valor_labor')
+      .eq('contratista_id', contratistaId).eq('labor_id', laborId).eq('estado','activa');
+    const choques=(previas||[]).filter(o=>Math.round(o.valor_labor)===Math.round(valor) &&
+      (o.cuarteles||[]).some(c=>seleccion.some(s=>s.id===c.centro_costo_id)));
+    if(choques.length){
+      avisoEl.innerHTML='<p class="fc-nota" style="color:var(--ambar)">⚠ Ya existe la orden N° '+choques.map(o=>o.n_orden).join(', ')+
+        ' para alguno de estos cuarteles al mismo valor por planta. Si esto es un repase, cambia el valor.</p>';
+    }
+  }catch(e){ /* el aviso es informativo, no crítico */ }
+}
+
+async function generarOrdenPago(btn){
+  const msg=document.getElementById('opMsg');
+  const contratistaNombre=document.getElementById('opContratista').value;
+  const laborNombre=document.getElementById('opLabor').value;
+  const contratistaId=MAP_CONTRATISTA_ID[contratistaNombre];
+  const laborId=MAP_LABOR_ID[laborNombre];
+  const valor=Number(document.getElementById('opValor').value)||0;
+  const pct=Number(document.getElementById('opPct').value)||0;
+  const seleccion=opCuartelesSeleccionados();
+
+  if(!contratistaId || !laborId || !seleccion.length || !valor){
+    msg.innerHTML='<span style="color:var(--rojo)">Falta contratista, labor, al menos un cuartel con plantas, o el valor por planta.</span>';
+    return;
+  }
+
+  const costoEmpresa=Math.round(valor*(1+pct/100));
+  const totalPlantas=seleccion.reduce((s,c)=>s+c.plantas,0);
+  const totalPagar=Math.round(totalPlantas*costoEmpresa);
+
+  if(btn){ btn.disabled=true; btn.textContent='Guardando…'; }
+  try{
+    const {data:orden, error}=await sb.from('terrenokizeo_ordenes_pago').insert({
+      contratista_id:contratistaId, labor_id:laborId,
+      cuarteles: seleccion.map(c=>({centro_costo_id:c.id, nombre:c.nombre, plantas:c.plantas})),
+      valor_labor:valor, pct_contratista:pct, costo_empresa:costoEmpresa,
+      total_plantas:totalPlantas, total_pagar:totalPagar,
+      emitida_por: (USUARIO_ACTUAL&&USUARIO_ACTUAL.nombre) || ''
+    }).select().single();
+    if(error) throw error;
+
+    // Marcar como cubiertas las líneas de asistencia que corresponden a esta orden.
+    const ccIds=seleccion.map(c=>c.id);
+    const {data:lineasAfectar}=await sb.from('terrenokizeo_folio_lineas')
+      .select('id, terrenokizeo_folios!inner(estado, contratista_id)')
+      .eq('tipo_pago','asistencia').is('orden_pago_id', null)
+      .eq('labor_id', laborId).in('centro_costo_id', ccIds)
+      .eq('terrenokizeo_folios.contratista_id', contratistaId)
+      .eq('terrenokizeo_folios.estado', 'aprobado');
+    const idsLineas=(lineasAfectar||[]).map(l=>l.id);
+    if(idsLineas.length){
+      await sb.from('terrenokizeo_folio_lineas').update({orden_pago_id:orden.id}).in('id', idsLineas);
+    }
+
+    msg.innerHTML='<span style="color:var(--verdeok)">✓ Orden N° '+orden.n_orden+' generada — '+idsLineas.length+' registro(s) de asistencia quedaron cubiertos, ya no aparecen pendientes.</span>';
+    imprimirOrdenPago({...orden, contratistaNombre, laborNombre});
+    cargarPendientesOrden();
+  }catch(e){
+    msg.innerHTML='<span style="color:var(--rojo)">No se pudo generar la orden: '+(e.message||e)+'</span>';
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='🖨️ Generar e imprimir orden'; }
+  }
+}
+
+function imprimirOrdenPago(o){
+  try{
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF();
+    doc.setTextColor(123,45,38);
+    doc.setFont('times','italic'); doc.setFontSize(11); doc.text('Agrícola', 14, 16);
+    doc.setFont('times','bold'); doc.setFontSize(20); doc.text('San José', 14, 25);
+    doc.setFont('helvetica','bolditalic'); doc.setFontSize(12); doc.setTextColor(30,30,30);
+    doc.text('ORDEN DE PAGO N° '+o.n_orden, 196, 20, {align:'right'});
+
+    let y=38;
+    const campo=(label,valor)=>{
+      doc.setFont('helvetica','normal'); doc.setFontSize(10);
+      doc.setTextColor(120,120,120); doc.text(label, 14, y);
+      doc.setTextColor(20,20,20); doc.text(String(valor||'—'), 133, y, {align:'right', maxWidth:113});
+      y+=7;
+    };
+    campo('Contratista:', o.contratistaNombre);
+    campo('Labor:', o.laborNombre);
+    campo('Fecha de emisión:', fechaLegible(o.fecha_emision||hoyISO()));
+    campo('Emitida por:', o.emitida_por);
+    campo('Valor por planta:', dinero(o.valor_labor));
+    campo('% empresa:', (o.pct_contratista||0)+'%');
+    campo('Costo empresa por planta:', dinero(o.costo_empresa));
+
+    y+=3;
+    doc.autoTable({
+      startY:y,
+      head:[['Cuartel','Plantas']],
+      body:(o.cuarteles||[]).map(c=>[c.nombre, Number(c.plantas).toLocaleString('es-CL')]),
+      foot:[['TOTAL', Number(o.total_plantas).toLocaleString('es-CL')]],
+      theme:'grid', headStyles:{fillColor:[123,45,38]}, footStyles:{fillColor:[235,235,235], textColor:[20,20,20], fontStyle:'bold'},
+      styles:{fontSize:9.5}, columnStyles:{1:{halign:'right'}}
+    });
+    const yFinal=(doc.lastAutoTable?doc.lastAutoTable.finalY:y+20)+10;
+    doc.setFontSize(13); doc.setTextColor(20,20,20);
+    doc.text('Total a pagar: '+dinero(o.total_pagar), 196, yFinal, {align:'right'});
+
+    doc.save('orden-pago-'+o.n_orden+'.pdf');
+  }catch(e){ console.warn('No se pudo generar el PDF de la orden', e); }
+}
+
+async function cargarHistorialOrdenes(){
+  const cont=document.getElementById('listaOrdenesHistorial');
+  cont.innerHTML='<p class="desc">Cargando…</p>';
+  try{
+    const {data, error}=await sb.from('terrenokizeo_ordenes_pago').select('*').order('n_orden',{ascending:false}).limit(50);
+    if(error) throw error;
+    if(!data.length){ cont.innerHTML='<p class="desc">Todavía no se generó ninguna orden.</p>'; return; }
+    cont.innerHTML=data.map(o=>{
+      const contratista=MAP_CONTRATISTA_NOMBRE[o.contratista_id]||'—';
+      const labor=MAP_LABOR_NOMBRE[o.labor_id]||'—';
+      const anulada=o.estado==='anulada';
+      return '<div class="item-pend" style="align-items:flex-start;'+(anulada?'opacity:.55':'')+'">'+
+        '<div style="flex:1">'+
+        '<div style="font-weight:700">Orden N° '+o.n_orden+(anulada?' · ANULADA':'')+'</div>'+
+        '<div style="color:var(--gris)">'+contratista+' · '+labor+'</div>'+
+        '<div style="color:var(--gris);font-size:12px">'+fechaLegible(o.fecha_emision)+' · '+dinero(o.total_pagar)+' · '+(o.emitida_por||'')+'</div>'+
+        '</div>'+
+        (anulada?'':'<button class="btn" style="padding:6px 10px;font-size:12px" onclick="anularOrdenPago(\''+o.id+'\')">Anular</button>')+
+        '</div>';
+    }).join('');
+  }catch(e){
+    console.warn('No se pudo cargar el historial de órdenes', e);
+    cont.innerHTML='<p class="desc">No se pudo conectar con el servidor.</p>';
+  }
+}
+
+async function anularOrdenPago(id){
+  if(!confirm('¿Anular esta orden? Las líneas de asistencia que cubría vuelven a quedar pendientes.')) return;
+  try{
+    const {error:e1}=await sb.from('terrenokizeo_ordenes_pago').update({estado:'anulada'}).eq('id', id);
+    if(e1) throw e1;
+    const {error:e2}=await sb.from('terrenokizeo_folio_lineas').update({orden_pago_id:null}).eq('orden_pago_id', id);
+    if(e2) throw e2;
+    cargarHistorialOrdenes();
+  }catch(e){
+    alert('No se pudo anular la orden: '+(e.message||e));
+  }
 }
 
 // ===== Vista PDF del folio =====
@@ -2130,6 +2433,7 @@ async function guardarFolioAdmin(){
   const encargadoNombre=document.getElementById('selEncargadoAdm').value;
   const cuarteles=[...new Set(LINEAS_ADMIN.map(l=>l.centroCosto))];
   const labores=[...new Set(LINEAS_ADMIN.map(l=>l.labor))];
+  const todoAsistenciaAdm=LINEAS_ADMIN.every(l=>l.tipo==='asistencia');
 
   const folioRow={
     id: uuid,
@@ -2137,7 +2441,7 @@ async function guardarFolioAdmin(){
     fecha: document.getElementById('fechaFolioAdm').value,
     encargado_id: MAP_USUARIO_ID[encargadoNombre] || null,
     contratista_id: MAP_CONTRATISTA_ID[CONTRATISTA_ADMIN] || null,
-    estado: 'preliminar'
+    estado: todoAsistenciaAdm ? 'aprobado' : 'preliminar'
   };
   const lineasRows=LINEAS_ADMIN.map(l=>({
     folio_id: uuid,
@@ -2162,6 +2466,7 @@ async function guardarFolioAdmin(){
     cuartel: cuarteles.join(' / '),
     labor: labores.join(' / '),
     contratista: CONTRATISTA_ADMIN,
+    estadoAprobacion: todoAsistenciaAdm ? 'aprobado' : 'preliminar',
     ruts: LINEAS_ADMIN.map(l=>l.rut),
     payload: {folioRow, lineasRows}
   };
@@ -3039,7 +3344,7 @@ async function guardarFolio(){
     contratista_id: MAP_CONTRATISTA_ID[contratistaNombre] || null,
     observaciones: obsTexto || null,
     firma_url: firmaCapturada,
-    estado: 'preliminar'
+    estado: tipo==='asistencia' ? 'aprobado' : 'preliminar'
   };
   const lineasRows=SELECCIONADOS.map(rut=>{
     const w=TRABAJADORES.find(t=>t.rut===rut) || {nom:rut};
@@ -3072,6 +3377,7 @@ async function guardarFolio(){
     labor: laborNombre,
     unidad: (LABOR_DATA[document.getElementById('selGrupoLabor').value]||[]).find(l=>l.label===laborNombre)?.unidad || '',
     tipo: tipo,
+    estadoAprobacion: tipo==='asistencia' ? 'aprobado' : 'preliminar',
     valorTrato: document.getElementById('valorTratoInput').value,
     valorDia: document.getElementById('valorDiaInput').value,
     jornadaFolio: document.getElementById('selJornada').value,
