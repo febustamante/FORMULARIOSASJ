@@ -443,6 +443,11 @@
     </div>
     <p class="desc" style="margin-bottom:12px">Se arma con los folios de Asistencia ya aprobados de contratistas externos — no hace falta ningún Excel. Al generar la orden, esas líneas dejan de aparecer como pendientes.</p>
 
+    <div class="seccion">
+      <div class="titulo-seccion">Todo lo pendiente hoy</div>
+      <div id="opResumenGlobal"><p class="desc">Cargando…</p></div>
+    </div>
+
     <label>Contratista</label>
     <select id="opContratista" onchange="cargarPendientesOrden()"><option value="">Selecciona un valor</option></select>
     <label style="margin-top:10px">Labor</label>
@@ -1812,6 +1817,67 @@ function iniciarPantallaOrdenes(){
   document.getElementById('opBloquePendientes').style.display='none';
   document.getElementById('opBloqueDatos').style.display='none';
   document.getElementById('opMsg').innerHTML='';
+  cargarResumenGlobalPendientes();
+}
+
+// Todo lo que hay pendiente HOY, de cualquier contratista externo y cualquier labor —
+// para que Sergio vea de entrada qué existe, en vez de tener que adivinar combinaciones.
+async function cargarResumenGlobalPendientes(){
+  const cont=document.getElementById('opResumenGlobal');
+  cont.innerHTML='<p class="desc">Cargando…</p>';
+  let filas=[];
+  try{
+    const {data, error}=await sb.from('terrenokizeo_folio_lineas')
+      .select('centro_costo_id, labor_id, folio_id, terrenokizeo_folios!inner(estado, contratista_id)')
+      .eq('tipo_pago','asistencia')
+      .is('orden_pago_id', null)
+      .eq('terrenokizeo_folios.estado', 'aprobado');
+    if(error) throw error;
+    filas=data||[];
+  }catch(e){
+    console.warn('No se pudo cargar el resumen de pendientes', e);
+    cont.innerHTML='<p class="desc">No se pudo conectar con el servidor.</p>';
+    return;
+  }
+
+  // Agrupa por contratista + labor, y adentro por cuartel — solo externos, solo El Cerrillo.
+  const grupos={};
+  filas.forEach(f=>{
+    const contratistaNombre=MAP_CONTRATISTA_NOMBRE[f.terrenokizeo_folios.contratista_id];
+    const cuartelNombre=MAP_CC_NOMBRE[f.centro_costo_id];
+    const laborNombre=MAP_LABOR_NOMBRE[f.labor_id];
+    if(!contratistaNombre || !esContratistaExterno(contratistaNombre)) return;
+    if(!cuartelNombre || MAP_CC_GRUPO[f.centro_costo_id]!=='El Cerrillo') return;
+    const clave=contratistaNombre+'|||'+laborNombre;
+    if(!grupos[clave]) grupos[clave]={contratistaNombre, laborNombre, cuarteles:{}};
+    (grupos[clave].cuarteles[cuartelNombre]=grupos[clave].cuarteles[cuartelNombre]||new Set()).add(f.folio_id);
+  });
+
+  const listaGrupos=Object.values(grupos);
+  if(!listaGrupos.length){
+    cont.innerHTML='<p class="desc">No hay Asistencia pendiente de pago por ahora.</p>';
+    return;
+  }
+  cont.innerHTML=listaGrupos.map(g=>{
+    const nombresCuarteles=Object.keys(g.cuarteles).sort();
+    const totalFolios=nombresCuarteles.reduce((s,c)=>s+g.cuarteles[c].size,0);
+    return '<div class="item-pend" style="align-items:flex-start;cursor:pointer" onclick="usarCombinacionPendiente(\''+g.contratistaNombre.replace(/'/g,"\\'")+'\',\''+g.laborNombre.replace(/'/g,"\\'")+'\')">'+
+      '<div style="flex:1">'+
+      '<div style="font-weight:700">'+g.contratistaNombre+' · '+g.laborNombre+'</div>'+
+      '<div style="color:var(--gris);font-size:12px">'+nombresCuarteles.map(c=>c+' ('+g.cuarteles[c].size+')').join(' · ')+'</div>'+
+      '<div style="color:var(--gris);font-size:12px;margin-top:2px">'+totalFolios+' folio(s) pendiente(s) en total</div>'+
+      '</div>'+
+      '<span class="btn btn-primario" style="padding:6px 10px;font-size:12px">Generar orden</span>'+
+      '</div>';
+  }).join('');
+}
+
+// Tocar un grupo del resumen lleva directo a armar la orden con esa combinación ya elegida.
+function usarCombinacionPendiente(contratistaNombre, laborNombre){
+  document.getElementById('opContratista').value=contratistaNombre;
+  document.getElementById('opLabor').value=laborNombre;
+  cargarPendientesOrden();
+  document.getElementById('opBloquePendientes').scrollIntoView({behavior:'smooth', block:'start'});
 }
 
 // Trae, para el contratista+labor elegidos, cuánta Asistencia real está pendiente
