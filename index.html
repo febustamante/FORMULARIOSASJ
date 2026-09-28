@@ -349,6 +349,20 @@
   }
   body.escritorio .topbar{border-radius:14px 14px 0 0;padding:15px 30px}
 
+  /* Órdenes de pago: en celular queda como tarjeta apilada (igual que el resto de la app).
+     En escritorio (donde Sergio y Felipe realmente la usan) pasa a fila de tabla,
+     aprovechando el ancho — el formulario de carga de datos no se toca, sigue igual. */
+  .orden-fila{display:flex;flex-direction:column;gap:5px}
+  .orden-fila .btn{margin-top:4px}
+  body.escritorio #p-ordenes-historial .orden-fila{
+    display:grid;grid-template-columns:80px 1.4fr 110px 120px 1fr 110px;align-items:center;gap:16px
+  }
+  body.escritorio #opResumenGlobal .orden-fila{
+    display:grid;grid-template-columns:1.4fr 1.6fr 160px;align-items:center;gap:16px
+  }
+  body.escritorio #p-ordenes-historial .orden-fila .btn,
+  body.escritorio #opResumenGlobal .orden-fila .btn{width:auto;margin-top:0;padding:9px 18px}
+
   /* Los formularios y fichas de una sola persona se quedan en ancho de lectura cómodo */
   body.escritorio #p-tipo, body.escritorio #p-form, body.escritorio #p-form-adm,
   body.escritorio #p-linea-trab, body.escritorio #p-linea-admin,
@@ -1962,12 +1976,9 @@ async function cargarResumenGlobalPendientes(){
   cont.innerHTML=listaGrupos.map(g=>{
     const nombresCuarteles=Object.keys(g.cuarteles).sort();
     const totalFolios=nombresCuarteles.reduce((s,c)=>s+g.cuarteles[c].size,0);
-    return '<div class="item-pend" style="flex-direction:column;align-items:stretch;gap:8px;cursor:pointer" onclick="usarCombinacionPendiente(\''+g.contratistaNombre.replace(/'/g,"\\'")+'\',\''+g.laborNombre.replace(/'/g,"\\'")+'\')">'+
-      '<div>'+
-      '<div style="font-weight:700;font-size:14.5px">'+g.contratistaNombre+'</div>'+
-      '<div style="color:var(--gris);font-size:12.5px;margin-top:2px">'+g.laborNombre+' · '+totalFolios+' folio(s) pendiente(s)</div>'+
-      '<div style="color:var(--gris);font-size:12px;margin-top:4px">'+nombresCuarteles.map(c=>c+' ('+g.cuarteles[c].size+')').join(' · ')+'</div>'+
-      '</div>'+
+    return '<div class="item-pend orden-fila" style="cursor:pointer" onclick="usarCombinacionPendiente(\''+g.contratistaNombre.replace(/'/g,"\\'")+'\',\''+g.laborNombre.replace(/'/g,"\\'")+'\')">'+
+      '<span><b style="font-size:14.5px">'+g.contratistaNombre+'</b><br><span style="color:var(--gris);font-size:12.5px">'+g.laborNombre+' · '+totalFolios+' folio(s) pendiente(s)</span></span>'+
+      '<span style="color:var(--gris);font-size:12.5px">'+nombresCuarteles.map(c=>c+' ('+g.cuarteles[c].size+')').join(' · ')+'</span>'+
       '<span class="btn btn-primario" style="text-align:center;padding:9px;font-size:13px">Generar orden</span>'+
       '</div>';
   }).join('');
@@ -2232,13 +2243,13 @@ async function cargarHistorialOrdenes(){
       const contratista=MAP_CONTRATISTA_NOMBRE[o.contratista_id]||'—';
       const labor=MAP_LABOR_NOMBRE[o.labor_id]||'—';
       const anulada=o.estado==='anulada';
-      return '<div class="item-pend" style="align-items:flex-start;'+(anulada?'opacity:.55':'')+'">'+
-        '<div style="flex:1">'+
-        '<div style="font-weight:700">Orden N° '+o.n_orden+(anulada?' · ANULADA':'')+'</div>'+
-        '<div style="color:var(--gris)">'+contratista+' · '+labor+'</div>'+
-        '<div style="color:var(--gris);font-size:12px">'+fechaLegible(o.fecha_emision)+' · '+dinero(o.total_pagar)+' · '+(o.emitida_por||'')+'</div>'+
-        '</div>'+
-        (anulada?'':'<button class="btn" style="padding:6px 10px;font-size:12px" onclick="anularOrdenPago(\''+o.id+'\')">Anular</button>')+
+      return '<div class="item-pend orden-fila" style="'+(anulada?'opacity:.55':'')+'">'+
+        '<span style="font-weight:700">N° '+o.n_orden+'</span>'+
+        '<span><b>'+contratista+'</b><br><span style="color:var(--gris);font-size:12.5px">'+labor+(anulada?' · ANULADA':'')+'</span></span>'+
+        '<span style="color:var(--gris);font-size:13px">'+fechaLegible(o.fecha_emision)+'</span>'+
+        '<span style="font-weight:700">'+dinero(o.total_pagar)+'</span>'+
+        '<span style="color:var(--gris);font-size:12.5px">'+(o.emitida_por||'—')+'</span>'+
+        (anulada?'':'<button class="btn" onclick="anularOrdenPago(\''+o.id+'\')">Anular</button>')+
         '</div>';
     }).join('');
   }catch(e){
