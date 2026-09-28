@@ -1948,6 +1948,7 @@ async function cargarResumenGlobalPendientes(){
     const laborNombre=MAP_LABOR_NOMBRE[f.labor_id];
     if(!contratistaNombre || !esContratistaExterno(contratistaNombre)) return;
     if(!cuartelNombre || MAP_CC_GRUPO[f.centro_costo_id]!=='El Cerrillo') return;
+    if(!(CODIGOS_CENTRO_COSTO[cuartelNombre]||{}).variedad) return; // solo cuarteles de campo reales, no "Arriendos", "Baños", etc.
     const clave=contratistaNombre+'|||'+laborNombre;
     if(!grupos[clave]) grupos[clave]={contratistaNombre, laborNombre, cuarteles:{}};
     (grupos[clave].cuarteles[cuartelNombre]=grupos[clave].cuarteles[cuartelNombre]||new Set()).add(f.folio_id);
@@ -1961,13 +1962,13 @@ async function cargarResumenGlobalPendientes(){
   cont.innerHTML=listaGrupos.map(g=>{
     const nombresCuarteles=Object.keys(g.cuarteles).sort();
     const totalFolios=nombresCuarteles.reduce((s,c)=>s+g.cuarteles[c].size,0);
-    return '<div class="item-pend" style="align-items:flex-start;cursor:pointer" onclick="usarCombinacionPendiente(\''+g.contratistaNombre.replace(/'/g,"\\'")+'\',\''+g.laborNombre.replace(/'/g,"\\'")+'\')">'+
-      '<div style="flex:1">'+
-      '<div style="font-weight:700">'+g.contratistaNombre+' · '+g.laborNombre+'</div>'+
-      '<div style="color:var(--gris);font-size:12px">'+nombresCuarteles.map(c=>c+' ('+g.cuarteles[c].size+')').join(' · ')+'</div>'+
-      '<div style="color:var(--gris);font-size:12px;margin-top:2px">'+totalFolios+' folio(s) pendiente(s) en total</div>'+
+    return '<div class="item-pend" style="flex-direction:column;align-items:stretch;gap:8px;cursor:pointer" onclick="usarCombinacionPendiente(\''+g.contratistaNombre.replace(/'/g,"\\'")+'\',\''+g.laborNombre.replace(/'/g,"\\'")+'\')">'+
+      '<div>'+
+      '<div style="font-weight:700;font-size:14.5px">'+g.contratistaNombre+'</div>'+
+      '<div style="color:var(--gris);font-size:12.5px;margin-top:2px">'+g.laborNombre+' · '+totalFolios+' folio(s) pendiente(s)</div>'+
+      '<div style="color:var(--gris);font-size:12px;margin-top:4px">'+nombresCuarteles.map(c=>c+' ('+g.cuarteles[c].size+')').join(' · ')+'</div>'+
       '</div>'+
-      '<span class="btn btn-primario" style="padding:6px 10px;font-size:12px">Generar orden</span>'+
+      '<span class="btn btn-primario" style="text-align:center;padding:9px;font-size:13px">Generar orden</span>'+
       '</div>';
   }).join('');
 }
@@ -2018,6 +2019,7 @@ async function cargarPendientesOrden(){
   filas.forEach(f=>{
     const nombre=MAP_CC_NOMBRE[f.centro_costo_id];
     if(!nombre || MAP_CC_GRUPO[f.centro_costo_id]!=='El Cerrillo') return;
+    if(!(CODIGOS_CENTRO_COSTO[nombre]||{}).variedad) return; // solo cuarteles de campo reales
     (porCuartel[nombre]=porCuartel[nombre]||new Set()).add(f.folio_id);
   });
   ORDENES_PENDIENTES_ACTUAL=porCuartel;
