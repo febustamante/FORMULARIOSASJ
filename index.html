@@ -950,7 +950,7 @@ const SUPABASE_KEY='sb_publishable_TvfWNvrb2AitDfwvW5YNww_QsR_gjD1';
 const sb=window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Mapas nombre -> id real, para poder insertar folios con las claves foráneas correctas
-let MAP_CONTRATISTA_ID={}, MAP_CC_ID={}, MAP_LABOR_ID={}, MAP_USUARIO_ID={};
+let MAP_CONTRATISTA_ID={}, MAP_CC_ID={}, MAP_LABOR_ID={}, MAP_USUARIO_ID={}, MAP_USUARIO_CORREO={};
 let MAP_CONTRATISTA_NOMBRE={}, MAP_CC_NOMBRE={}, MAP_LABOR_NOMBRE={}, MAP_USUARIO_NOMBRE={};
 let MAP_CC_GRUPO={}, MAP_LABOR_GRUPO={};
 
@@ -987,10 +987,11 @@ function construirEstructuras(contratistas, personal, labores, centros, usuarios
     CODIGOS_CENTRO_COSTO[c.nombre]={codigo:c.codigo, variedad:c.variedad||'', limitePlantas:c.limite_plantas};
   });
 
-  SUPERVISORES=[]; ADMINISTRADORES=[]; MAP_USUARIO_ID={}; MAP_USUARIO_NOMBRE={};
+  SUPERVISORES=[]; ADMINISTRADORES=[]; MAP_USUARIO_ID={}; MAP_USUARIO_NOMBRE={}; MAP_USUARIO_CORREO={};
   usuarios.forEach(u=>{
     MAP_USUARIO_ID[u.nombre]=u.id;
     MAP_USUARIO_NOMBRE[u.id]=u.nombre;
+    MAP_USUARIO_CORREO[u.nombre]=u.correo||null;
     if(u.rol==='supervisor') SUPERVISORES.push({nombre:u.nombre, rut:u.rut});
     if(u.rol==='administrador') ADMINISTRADORES.push(u.nombre);
   });
@@ -1208,6 +1209,7 @@ function enviarAvisoFolioCreado(item){
       labor: item.labor,
       fecha: item.fecha ? fechaLegible(item.fecha) : '',
       estado: estadoReal,
+      encargadoCorreo: item.correoEncargado,
       pdfBase64
     })
   }).catch(e=>console.warn('No se pudo enviar el aviso de folio creado por correo', e));
@@ -1329,6 +1331,7 @@ function mapearFolioReal(row){
     folio: row.correlativo,
     tipoFormulario: row.tipo_formulario,
     supervisor: MAP_USUARIO_NOMBRE[row.encargado_id] || '—',
+    correoSupervisor: MAP_USUARIO_CORREO[MAP_USUARIO_NOMBRE[row.encargado_id]] || null,
     hora: fechaHoraCorta(row.creado_en),
     fecha: row.fecha,
     contratista: MAP_CONTRATISTA_NOMBRE[row.contratista_id] || '—',
@@ -1794,6 +1797,7 @@ function enviarAvisoFolioAprobado(folio){
       labor: folio.labor,
       fechaAprobacion: fechaAprobacionTxt,
       total: total || null,
+      encargadoCorreo: folio.correoSupervisor,
       pdfBase64
     })
   }).catch(e=>console.warn('No se pudo enviar el aviso de folio aprobado por correo', e));
@@ -2656,6 +2660,7 @@ async function guardarFolioAdmin(){
     estado: 'pendiente',
     fecha: document.getElementById('fechaFolioAdm').value,
     encargado: encargadoNombre,
+    correoEncargado: MAP_USUARIO_CORREO[encargadoNombre] || null,
     grupoCentro: document.getElementById('selGrupoCentroAdm').value,
     cuartel: cuarteles.join(' / '),
     labor: labores.join(' / '),
@@ -3564,6 +3569,7 @@ async function guardarFolio(){
     estado: 'pendiente',
     fecha: document.getElementById('fechaFolio').value,
     encargado: encargadoNombre,
+    correoEncargado: MAP_USUARIO_CORREO[encargadoNombre] || null,
     rutEncargado: rutPorSupervisor(encargadoNombre),
     grupoCentro: document.getElementById('selGrupoCentro').value,
     cuartel: cuartelNombre,
