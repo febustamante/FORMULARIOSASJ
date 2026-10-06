@@ -1235,7 +1235,7 @@ function enviarAvisoFolioCreado(item){
       labor: item.labor,
       fecha: item.fecha ? fechaLegible(item.fecha) : '',
       estado: estadoReal,
-      encargadoCorreo: item.correoEncargado,
+      copiaCorreo: item.correoSesion || correoSesionActual(),
       pdfBase64
     })
   }).catch(e=>console.warn('No se pudo enviar el aviso de folio creado por correo', e));
@@ -1823,7 +1823,7 @@ function enviarAvisoFolioAprobado(folio){
       labor: folio.labor,
       fechaAprobacion: fechaAprobacionTxt,
       total: total || null,
-      encargadoCorreo: folio.correoSupervisor,
+      copiaCorreo: correoSesionActual(),
       pdfBase64
     })
   }).catch(e=>console.warn('No se pudo enviar el aviso de folio aprobado por correo', e));
@@ -2699,6 +2699,7 @@ async function guardarFolioAdmin(){
     fecha: document.getElementById('fechaFolioAdm').value,
     encargado: encargadoNombre,
     correoEncargado: MAP_USUARIO_CORREO[encargadoNombre] || null,
+    correoSesion: correoSesionActual(),
     grupoCentro: document.getElementById('selGrupoCentroAdm').value,
     cuartel: cuarteles.join(' / '),
     labor: labores.join(' / '),
@@ -3302,6 +3303,8 @@ function pintarBannerBorradorAdm(){
 let ROL_ACTUAL='supervisor';
 let USUARIO_ACTUAL=null; // fila de terrenokizeo_usuarios de quien inició sesión
 
+function correoSesionActual(){ return (USUARIO_ACTUAL&&USUARIO_ACTUAL.correoSesion)||null; }
+
 function esAdministrador(){ return ROL_ACTUAL==='administrador' || ROL_ACTUAL==='maestro'; }
 
 async function iniciarSesion(){
@@ -3320,6 +3323,7 @@ async function iniciarSesion(){
     if(!perfil.activo) throw new Error('Tu cuenta está desactivada.');
 
     USUARIO_ACTUAL=perfil;
+    USUARIO_ACTUAL.correoSesion=(data.user&&data.user.email)||null;
     ROL_ACTUAL=perfil.rol;
     aplicarRol();
     document.getElementById('inputCorreo').value='';
@@ -3608,6 +3612,7 @@ async function guardarFolio(){
     fecha: document.getElementById('fechaFolio').value,
     encargado: encargadoNombre,
     correoEncargado: MAP_USUARIO_CORREO[encargadoNombre] || null,
+    correoSesion: correoSesionActual(),
     rutEncargado: rutPorSupervisor(encargadoNombre),
     grupoCentro: document.getElementById('selGrupoCentro').value,
     cuartel: cuartelNombre,
@@ -3752,6 +3757,7 @@ async function iniciarApp(){
       const {data:perfil}=await sb.from('terrenokizeo_usuarios').select('*').eq('auth_user_id', session.user.id).single();
       if(perfil && perfil.activo){
         USUARIO_ACTUAL=perfil;
+        USUARIO_ACTUAL.correoSesion=session.user.email||null;
         ROL_ACTUAL=perfil.rol;
         aplicarRol();
         ir(esAdministrador() ? 'p-admin-lista' : 'p-tipo');
