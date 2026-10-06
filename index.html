@@ -1145,10 +1145,14 @@ async function subirFolioLocal(item){
       const {error:e2}=await sb.from('terrenokizeo_folio_lineas').upsert(item.payload.lineasRows,{onConflict:'linea_uuid'});
       if(e2) throw e2;
     }
-    const {data}=await sb.from('terrenokizeo_folios').select('correlativo').eq('id', item.uuid).single();
+    const {data, error:e3}=await sb.from('terrenokizeo_folios').select('correlativo').eq('id', item.uuid).single();
+    // Sin el número de folio no se da por subido: queda pendiente y se reintenta (reenviar es seguro,
+    // el servidor reconoce el folio y sus líneas y no los duplica ni gasta otro número).
+    if(e3 || !data || data.correlativo==null) throw (e3 || new Error('No llegó el número de folio'));
     item.estado='subido';
-    item.folio=data ? data.correlativo : null;
+    item.folio=data.correlativo;
     actualizarBadgeSenal(true);
+    item.avisoPendiente=true;      // hasta que el correo de aviso confirme que salió
     guardarFoliosLocalesCache();
     enviarAvisoFolioCreado(item); // el correo se manda recién ahora, que el folio ya subió de verdad
     return true;
@@ -1324,7 +1328,20 @@ function dineroPdf(n){ return '$'+(Number(n)||0).toLocaleString('es-CL'); }
 
 // El aviso nunca debe frenar ni hacer fallar la subida del folio en sí —
 // si el correo falla, solo queda un aviso en consola.
+// Las funciones de aviso solo atienden a usuarios con sesión: cada llamada lleva el token de la sesión.
+async function cabecerasAviso(){
+  const hd={'Content-Type':'application/json'};
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    if(session && session.access_token) hd['Authorization']='Bearer '+session.access_token;
+  }catch(e){}
+  return hd;
+}
+
+const AVISANDO={}; // avisos en camino, por folio, para no mandar el mismo correo dos veces a la vez
 function enviarAvisoFolioCreado(item){
+  if(AVISANDO[item.uuid]) return Promise.resolve();
+  AVISANDO[item.uuid]=true;
   const trab=(item.payload.lineasRows||[]).map(l=>({
     nom:l.nombre_trabajador, rut:l.rut_trabajador, tipo:l.tipo_pago, valorUnitario:l.valor_unitario, jornada:l.jornada, unidades:l.unidades
   }));
@@ -1345,9 +1362,9 @@ function enviarAvisoFolioCreado(item){
     });
   }catch(e){ console.warn('No se pudo armar el PDF adjunto', e); }
 
-  fetch('https://cmfvnluppvqyqwpfjrbs.supabase.co/functions/v1/aviso-folio-creado', {
+  cabecerasAviso().then(headers=>fetch('https://cmfvnluppvqyqwpfjrbs.supabase.co/functions/v1/aviso-folio-creado', {
     method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers,
     body: JSON.stringify({
       folio: item.folio,
       tipoFormulario: item.tipoFormulario,
@@ -1360,7 +1377,11 @@ function enviarAvisoFolioCreado(item){
       copiaCorreo: item.correoSesion || correoSesionActual(),
       pdfBase64
     })
-  }).catch(e=>console.warn('No se pudo enviar el aviso de folio creado por correo', e));
+  })).then(r=>{
+    if(r && r.ok===false) throw new Error('El servidor respondió '+r.status);
+    item.avisoPendiente=false; guardarFoliosLocalesCache();
+  }).catch(e=>console.warn('No se pudo enviar el aviso de folio creado por correo (se reintenta más tarde)', e))
+    .finally(()=>{ delete AVISANDO[item.uuid]; });
 }
 
 // ===== Catálogos reales (Labores y Personal), embebidos en la maqueta =====
@@ -1920,7 +1941,7 @@ function abrirDetalleAdmin(id){
   document.getElementById('adTipoTxt').textContent=tipoTxt;
   const esAdmVarios=ADMIN_ACTUAL.tipoFormulario==='administrativo';
   document.getElementById('adListaTrab').innerHTML='<div class="lista-trab-monto">'+ADMIN_ACTUAL.trab.map(t=>{
-    const detalleLinea = esAdmVarios ? ' · '+(t.centroCosto||'—')+' · '+(t.labor||'—') : '';
+    const detalleLinea = esAdmVarios ? ' · '+escHtml(t.centroCosto||'—')+' · '+escHtml(t.labor||'—') : '';
     let dato, monto;
     if(t.tipo==='trato'){
       dato = (Number(t.unidades)||0)+' plantas'+detalleLinea;
@@ -1932,7 +1953,7 @@ function abrirDetalleAdmin(id){
       dato = 'presente'+detalleLinea;
       monto = '—';
     }
-    return '<div class="fila-trab-monto"><div><div class="ftm-nom">'+t.nom+'</div>'+
+    return '<div class="fila-trab-monto"><div><div class="ftm-nom">'+escHtml(t.nom)+'</div>'+
       '<div class="ftm-dato">'+dato+'</div></div>'+
       '<div class="ftm-monto">'+monto+'</div></div>';
   }).join('')+'</div>';
@@ -2071,22 +2092,64 @@ function enviarAvisoFolioAprobado(folio){
     });
   }catch(e){ console.warn('No se pudo armar el PDF adjunto', e); }
 
-  fetch('https://cmfvnluppvqyqwpfjrbs.supabase.co/functions/v1/aviso-folio-aprobado', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({
-      folio: folio.folio,
-      encargado: folio.supervisor,
-      contratista: folio.contratista,
-      cuartel: folio.cuartel,
-      labor: folio.labor,
-      fechaAprobacion: fechaAprobacionTxt,
-      total: total || null,
-      copiaCorreo: correoSesionActual(),
-      pdfBase64
-    })
-  }).catch(e=>console.warn('No se pudo enviar el aviso de folio aprobado por correo', e));
+  return enviarAvisoAprobadoPayload({
+    folio: folio.folio,
+    encargado: folio.supervisor,
+    contratista: folio.contratista,
+    cuartel: folio.cuartel,
+    labor: folio.labor,
+    fechaAprobacion: fechaAprobacionTxt,
+    total: total || null,
+    copiaCorreo: correoSesionActual(),
+    pdfBase64
+  });
 }
+
+// Manda el aviso de aprobado; si no se puede (sin señal), lo deja en una cola y se reintenta solo.
+const COLA_APROBADOS='tk_avisos_aprobado';
+function leerColaAprobados(){ try{ return JSON.parse(localStorage.getItem(COLA_APROBADOS)||'[]'); }catch(e){ return []; } }
+function guardarColaAprobados(c){ try{ localStorage.setItem(COLA_APROBADOS, JSON.stringify(c.slice(-30))); }catch(e){} }
+const APROBADOS_EN_VUELO=new Set();
+async function enviarAvisoAprobadoPayload(payload, desdeCola){
+  // El aviso se anota ANTES de intentar mandarlo y se saca de la cola solo cuando el correo salió de verdad:
+  // si la app se cierra o se corta la señal a mitad de camino, no se pierde.
+  if(!payload._qid) payload._qid='q'+Date.now()+Math.random().toString(36).slice(2,8);
+  if(APROBADOS_EN_VUELO.has(payload._qid)) return false;
+  APROBADOS_EN_VUELO.add(payload._qid);
+  if(!desdeCola){ const c=leerColaAprobados(); c.push(payload); guardarColaAprobados(c); }
+  let ok=false;
+  try{
+    const r=await fetch('https://cmfvnluppvqyqwpfjrbs.supabase.co/functions/v1/aviso-folio-aprobado', {
+      method:'POST', headers: await cabecerasAviso(), body: JSON.stringify(payload)
+    });
+    if(r && r.ok===false) throw new Error('El servidor respondió '+r.status);
+    ok=true;
+  }catch(e){
+    console.warn('No se pudo enviar el aviso de folio aprobado por correo (se reintenta más tarde)', e);
+  }
+  if(ok) guardarColaAprobados(leerColaAprobados().filter(x=>x._qid!==payload._qid));
+  APROBADOS_EN_VUELO.delete(payload._qid);
+  return ok;
+}
+async function reenviarAvisosPendientes(){
+  // avisos de "folio creado" que no alcanzaron a salir
+  for(const it of FOLIOS_LOCALES.filter(f=>f.estado==='subido' && f.avisoPendiente)) await enviarAvisoFolioCreado(it);
+  // avisos de "folio aprobado" en cola
+  for(const pl of leerColaAprobados()) await enviarAvisoAprobadoPayload(pl,true);
+}
+
+// ===== Sincronización automática: no depende de que alguien se acuerde de tocar el botón =====
+async function sincronizarSilencioso(){
+  if(!USUARIO_ACTUAL) return;
+  return conCandado('sync-auto', async ()=>{
+    for(const item of FOLIOS_LOCALES.filter(f=>f.estado==='pendiente')) await subirFolioLocal(item);
+    await reenviarAvisosPendientes();
+    pintarFoliosLocales();
+  });
+}
+window.addEventListener('online', ()=>{ sincronizarSilencioso(); });
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') sincronizarSilencioso(); });
+setInterval(()=>{ if(navigator.onLine!==false) sincronizarSilencioso(); }, 45000);
 
 // Solo se llenan los selects la primera vez que se entra a esta pantalla en la sesión.
 function iniciarPantallaAvance(){
@@ -2232,18 +2295,25 @@ async function cargarResumenGlobalPendientes(){
     cont.innerHTML='<p class="desc">No hay Asistencia pendiente de pago por ahora.</p>';
     return;
   }
-  cont.innerHTML=listaGrupos.map(g=>{
+  RESUMEN_GRUPOS=listaGrupos;
+  cont.innerHTML=listaGrupos.map((g,i)=>{
     const nombresCuarteles=Object.keys(g.cuarteles).sort();
     const totalFolios=nombresCuarteles.reduce((s,c)=>s+g.cuarteles[c].size,0);
-    return '<div class="item-pend orden-fila" style="cursor:pointer" onclick="usarCombinacionPendiente(\''+g.contratistaNombre.replace(/'/g,"\\'")+'\',\''+g.laborNombre.replace(/'/g,"\\'")+'\')">'+
-      '<span><b style="font-size:14.5px">'+g.contratistaNombre+'</b><br><span style="color:var(--gris);font-size:12.5px">'+g.laborNombre+' · '+totalFolios+' folio(s) pendiente(s)</span></span>'+
-      '<span style="color:var(--gris);font-size:12.5px">'+nombresCuarteles.map(c=>c+' ('+g.cuarteles[c].size+')').join(' · ')+'</span>'+
+    // El botón lleva solo la posición de la fila: un nombre con comillas o apóstrofes no puede romperlo.
+    return '<div class="item-pend orden-fila" style="cursor:pointer" onclick="usarCombinacionPendienteIdx('+i+')">'+
+      '<span><b style="font-size:14.5px">'+escHtml(g.contratistaNombre)+'</b><br><span style="color:var(--gris);font-size:12.5px">'+escHtml(g.laborNombre)+' · '+totalFolios+' folio(s) pendiente(s)</span></span>'+
+      '<span style="color:var(--gris);font-size:12.5px">'+nombresCuarteles.map(c=>escHtml(c)+' ('+g.cuarteles[c].size+')').join(' · ')+'</span>'+
       '<span class="btn btn-primario" style="text-align:center;padding:9px;font-size:13px">Generar orden</span>'+
       '</div>';
   }).join('');
 }
 
 // Tocar un grupo del resumen lleva directo a armar la orden con esa combinación ya elegida.
+let RESUMEN_GRUPOS=[];
+function usarCombinacionPendienteIdx(i){
+  const g=RESUMEN_GRUPOS[i];
+  if(g) usarCombinacionPendiente(g.contratistaNombre, g.laborNombre);
+}
 function usarCombinacionPendiente(contratistaNombre, laborNombre){
   document.getElementById('opContratista').value=contratistaNombre;
   document.getElementById('opLabor').value=laborNombre;
@@ -2398,6 +2468,12 @@ async function _generarOrdenPago(btn){
     msg.innerHTML='<span style="color:var(--rojo)">Falta contratista, labor, al menos un cuartel con plantas, o el valor por planta.</span>';
     return;
   }
+  const problemaOrden = valor<0 ? 'El valor por planta no puede ser negativo.'
+    : valor>LIM.valorTrato ? 'El valor por planta ('+dineroCorto(valor)+') parece un error de tipeo.'
+    : (pct<0 || pct>200) ? 'El % de la empresa tiene que estar entre 0 y 200.'
+    : seleccion.some(c=>c.plantas>1000000) ? 'Hay un cuartel con una cantidad de plantas fuera de rango.'
+    : '';
+  if(problemaOrden){ msg.innerHTML='<span style="color:var(--rojo)">'+problemaOrden+'</span>'; return; }
 
   const costoEmpresa=Math.round(valor*(1+pct/100));
   const totalPlantas=seleccion.reduce((s,c)=>s+c.plantas,0);
@@ -2524,10 +2600,10 @@ async function cargarHistorialOrdenes(){
       const anulada=o.estado==='anulada';
       return '<div class="item-pend orden-fila" style="'+(anulada?'opacity:.55':'')+'">'+
         '<span style="font-weight:700">N° '+o.n_orden+'</span>'+
-        '<span><b>'+contratista+'</b><br><span style="color:var(--gris);font-size:12.5px">'+labor+(anulada?' · ANULADA':'')+'</span></span>'+
+        '<span><b>'+escHtml(contratista)+'</b><br><span style="color:var(--gris);font-size:12.5px">'+escHtml(labor)+(anulada?' · ANULADA':'')+'</span></span>'+
         '<span style="color:var(--gris);font-size:13px">'+fechaLegible(o.fecha_emision)+'</span>'+
         '<span style="font-weight:700">'+dinero(o.total_pagar)+'</span>'+
-        '<span style="color:var(--gris);font-size:12.5px">'+(o.emitida_por||'—')+'</span>'+
+        '<span style="color:var(--gris);font-size:12.5px">'+escHtml(o.emitida_por||'—')+'</span>'+
         '<button class="btn" onclick="verPdfOrdenHistorial(\''+o.id+'\')">Ver PDF</button>'+
         (anulada?'':'<button class="btn" onclick="anularOrdenPago(\''+o.id+'\')">Anular</button>')+
         '</div>';
@@ -2569,7 +2645,7 @@ function armarHojaPdf(f){
   const e=estados[f.estado]||estados.preliminar;
   const esTrato = f.tipo==='trato';
 
-  const dato=(k,v)=>'<div class="hoja-dato"><div class="k">'+k+'</div><div class="v">'+(v||'—')+'</div></div>';
+  const dato=(k,v)=>'<div class="hoja-dato"><div class="k">'+k+'</div><div class="v">'+escHtml(v||'—')+'</div></div>';
 
   let filas='', totalUnid=0, totalCosto=0;
   f.trabajadores.forEach((t,i)=>{
@@ -2585,7 +2661,7 @@ function armarHojaPdf(f){
       mostrarCosto=dinero(costo);
     }
     totalUnid+=unid; totalCosto+=costo;
-    filas+='<tr><td class="c">'+(i+1)+'</td><td>'+t.nom+'</td><td>'+t.rut+'</td>'+
+    filas+='<tr><td class="c">'+(i+1)+'</td><td>'+escHtml(t.nom)+'</td><td>'+escHtml(t.rut)+'</td>'+
       '<td class="c">'+String(t.jornada||'1').replace('.',',')+'</td>'+
       '<td class="c">'+mostrarUnid+'</td>'+
       '<td class="r">'+mostrarCosto+'</td></tr>';
@@ -2598,7 +2674,7 @@ function armarHojaPdf(f){
         '<div class="n'+(f.folio?'':' pend')+'">'+(f.folio ? f.folio : 'se asigna al subir')+'</div></div>'+
     '</div>'+
     '<div class="hoja-banda">'+e.txt+'</div>'+
-    '<div class="hoja-trazas">'+f.trazas.join('<br>')+'</div>'+
+    '<div class="hoja-trazas">'+f.trazas.map(escHtml).join('<br>')+'</div>'+
     '<div class="hoja-cuerpo">'+
       '<div class="hoja-datos">'+
         dato('Fecha:', fechaLegible(f.fecha))+
@@ -2746,7 +2822,7 @@ function pintarPickerEmpleadoAdmin(){
   const cont=document.getElementById('listaPickerAdm');
   if(!filtrados.length){ cont.innerHTML='<p class="desc">Sin resultados.</p>'; return; }
   cont.innerHTML=filtrados.map(w=>
-    '<div class="picker-item" onclick="agregarDesdePickerAdmin(\''+w.rut+'\')"><span>'+w.nom+'</span><span class="rut">'+w.rut+'</span></div>'
+    '<div class="picker-item" onclick="agregarDesdePickerAdmin(\''+w.rut+'\')"><span>'+escHtml(w.nom)+'</span><span class="rut">'+escHtml(w.rut)+'</span></div>'
   ).join('');
 }
 
@@ -2841,8 +2917,7 @@ function guardarLineaAdmin(seguirConMismaPersona){
   if(!centroCosto) errores.push('Falta el Centro Costo.');
   if(!labor) errores.push('Falta la Labor.');
   if(!jornada) errores.push('Falta la Jornada.');
-  if(!Number(valorUnitario) && tipo!=='asistencia') errores.push('Falta el Valor Unitario Labor.');
-  if(tipo==='trato' && !Number(unidades)) errores.push('Faltan las Unidades Trabajadas.');
+  if(tipo!=='asistencia') erroresDeMonto(tipo, valorUnitario, unidades).forEach(m=>errores.push(m));
   if(errores.length){ alert('Revisa esta línea:\n\n· '+errores.join('\n· ')); return; }
 
   const rut = ctx.esNueva ? ctx.rut : LINEAS_ADMIN.find(l=>l.id===ctx.id).rut;
@@ -2896,7 +2971,7 @@ function pintarLineasAdmin(){
     else if(l.tipo==='dia') costo = Math.round((Number(l.jornada)||0)*(Number(l.valorUnitario)||0));
     totalUnid+=unid; totalCosto+=costo;
     filas+='<tr class="fila-trab" onclick="editarLineaAdmin(\''+l.id+'\')">'+
-      '<td><div class="tp-nom">'+l.nom+'</div><div class="tp-rut">'+l.centroCosto+' · '+l.labor+'</div></td>'+
+      '<td><div class="tp-nom">'+escHtml(l.nom)+'</div><div class="tp-rut">'+escHtml(l.centroCosto)+' · '+escHtml(l.labor)+'</div></td>'+
       '<td class="num">'+String(l.jornada).replace('.',',')+'</td>'+
       '<td class="num">'+(l.tipo==='trato' ? unid : '—')+'</td>'+
       '</tr>';
@@ -2917,7 +2992,7 @@ async function guardarFolioAdmin(){
   const soltar=()=>{ GUARDANDO_ADMIN=false; if(btn){ btn.disabled=false; btn.style.opacity=''; btn.textContent='Guardar folio'; } };
 
   const errores=[];
-  if(!document.getElementById('fechaFolioAdm').value) errores.push('Falta la fecha del folio.');
+  { const ef=errorDeFecha(document.getElementById('fechaFolioAdm').value); if(ef) errores.push(ef); }
   if(!document.getElementById('selEncargadoAdm').value) errores.push('Falta elegir el Encargado SAPA.');
   if(!document.getElementById('selGrupoCentroAdm').value) errores.push('Falta el Grupo Centro Costo.');
   if(!LINEAS_ADMIN.length) errores.push('El folio no tiene ninguna línea de personal.');
@@ -3159,7 +3234,7 @@ function pintarPickerTrab(){
     const usado=SELECCIONADOS.includes(w.rut);
     const accion = usado ? '' : ' onclick="agregarDesdePicker(\''+w.rut+'\')"';
     return '<div class="picker-item'+(usado?' usado':'')+'"'+accion+'>'+
-      '<span>'+w.nom+'</span><span class="rut">'+w.rut+'</span></div>';
+      '<span>'+escHtml(w.nom)+'</span><span class="rut">'+escHtml(w.rut)+'</span></div>';
   }).join('');
 }
 
@@ -3329,7 +3404,7 @@ function pintarSeleccionados(){
       celdaUnid = '<td class="num">'+dinero(montoDia)+'</td>';
     }
     return '<tr class="fila-trab" onclick="abrirEditorLinea(\''+rut+'\',false)">'+
-      '<td><div class="tp-nom">'+w.nom+'</div><div class="tp-rut">'+w.rut+'</div></td>'+
+      '<td><div class="tp-nom">'+escHtml(w.nom)+'</div><div class="tp-rut">'+escHtml(w.rut)+'</div></td>'+
       '<td class="num">'+jor+'</td>'+
       celdaUnid+
       '</tr>';
@@ -3428,7 +3503,7 @@ function pintarFoliosLocales(){
     const et = f.estado==='subido'
       ? '<span class="estado est-ok">Folio '+f.folio+'</span>'
       : '<span class="estado est-pendiente">Sin subir</span>';
-    return '<div class="item-pend">'+et+'<div style="flex:1">'+f.cuartel+' · '+f.labor+' · '+f.contratista+
+    return '<div class="item-pend">'+et+'<div style="flex:1">'+escHtml(f.cuartel)+' · '+escHtml(f.labor)+' · '+escHtml(f.contratista)+
       '<div style="font-size:10.5px;color:var(--gris);margin-top:2px">'+
       (f.estado==='subido' ? 'Número asignado por el servidor' : 'Guardado con id '+f.uuid.slice(0,8)+'… — sin número aún')+
       '</div></div></div>';
@@ -3587,7 +3662,18 @@ async function conCandado(clave, fn){
   finally{ CANDADOS[clave]=false; }
 }
 
+// Un error de red (sin señal, servidor inalcanzable) no es lo mismo que una clave equivocada.
+function esErrorDeRed(err){
+  if(!err) return false;
+  const txt=((err.name||'')+' '+(err.message||'')).toLowerCase();
+  return err.status===0 || err.status===undefined && /fetch|network|retryable|timeout|failed/.test(txt) || /retryable|failed to fetch|networkerror|network request/.test(txt);
+}
+
 function correoSesionActual(){ return (USUARIO_ACTUAL&&USUARIO_ACTUAL.correoSesion)||null; }
+
+const PERFIL_CACHE='tk_perfil';
+function guardarPerfilCache(perfil, correo){ try{ localStorage.setItem(PERFIL_CACHE, JSON.stringify({perfil, correoSesion:correo})); }catch(e){} }
+function leerPerfilCache(){ try{ return JSON.parse(localStorage.getItem(PERFIL_CACHE)||'null'); }catch(e){ return null; } }
 
 function esAdministrador(){ return ROL_ACTUAL==='administrador' || ROL_ACTUAL==='maestro'; }
 
@@ -3600,19 +3686,25 @@ async function iniciarSesion(){
   btn.disabled=true; btn.textContent='Ingresando…';
   try{
     const {data, error}=await sb.auth.signInWithPassword({email:correo, password:clave});
-    if(error) throw new Error('Correo o contraseña incorrectos.');
+    if(error){
+      if(esErrorDeRed(error)) throw new Error('No se pudo conectar con el servidor. Revisa tu señal e inténtalo de nuevo.');
+      throw new Error('Correo o contraseña incorrectos.');
+    }
 
     const {data:perfil, error:e2}=await sb.from('terrenokizeo_usuarios').select('*').eq('auth_user_id', data.user.id).single();
-    if(e2 || !perfil) throw new Error('Tu cuenta existe pero todavía no está vinculada a ningún perfil de la app. Avisa a Felipe.');
+    if(e2 && e2.code!=='PGRST116') throw new Error('Se pudo validar tu clave, pero no se pudo cargar tu perfil. Revisa tu señal e inténtalo de nuevo.');
+    if(!perfil) throw new Error('Tu cuenta existe pero todavía no está vinculada a ningún perfil de la app. Avisa a Felipe.');
     if(!perfil.activo) throw new Error('Tu cuenta está desactivada.');
 
     USUARIO_ACTUAL=perfil;
     USUARIO_ACTUAL.correoSesion=(data.user&&data.user.email)||null;
+    guardarPerfilCache(perfil, USUARIO_ACTUAL.correoSesion);
     ROL_ACTUAL=perfil.rol;
     aplicarRol();
     document.getElementById('inputCorreo').value='';
     document.getElementById('inputClave').value='';
     ir(esAdministrador() ? 'p-admin-lista' : 'p-tipo');
+    sincronizarSilencioso();
   }catch(e){
     alert('No se pudo iniciar sesión.\n\n'+e.message);
   }finally{
@@ -3658,8 +3750,8 @@ function pintarMisFolios(){
     const et = f.estado==='subido'
       ? '<span class="estado est-ok">Folio '+f.folio+'</span>'
       : '<span class="estado est-pendiente">Sin subir</span>';
-    return '<div class="item-pend">'+et+'<div style="flex:1">'+f.cuartel+' · '+f.labor+
-      '<div style="font-size:10.5px;color:var(--gris);margin-top:2px">'+f.contratista+'</div></div></div>';
+    return '<div class="item-pend">'+et+'<div style="flex:1">'+escHtml(f.cuartel)+' · '+escHtml(f.labor)+
+      '<div style="font-size:10.5px;color:var(--gris);margin-top:2px">'+escHtml(f.contratista)+'</div></div></div>';
   }).join('');
   if(FOLIOS_LOCALES.length>10){
     cont.innerHTML += '<p class="fc-nota">+ '+(FOLIOS_LOCALES.length-10)+' folio(s) más antiguos.</p>';
@@ -3777,10 +3869,44 @@ async function revisarDuplicadosServidor(fecha, contratista, cuartel, labor){
 }
 
 // Lo que no se puede guardar de ninguna manera
+// Límites para detectar errores de tipeo. Son holgados a propósito: lo normal queda muy por debajo.
+const LIM={unidades:50000, valorTrato:500000, valorDia:500000, montoLinea:5000000, diasPasado:90, diasFuturo:1};
+function dineroCorto(n){ return '$'+Number(n).toLocaleString('es-CL'); }
+
+function errorDeFecha(iso){
+  if(!iso) return 'Falta la fecha del folio.';
+  const d=new Date(iso+'T12:00:00');
+  if(isNaN(d.getTime())) return 'La fecha del folio no es válida.';
+  const hoy=new Date(hoyISO()+'T12:00:00');
+  const dias=Math.round((d-hoy)/86400000);
+  if(dias>LIM.diasFuturo) return 'La fecha del folio ('+fechaLegible(iso)+') está en el futuro. Revísala.';
+  if(dias<-LIM.diasPasado) return 'La fecha del folio ('+fechaLegible(iso)+') es de hace más de '+LIM.diasPasado+' días. Revísala; si es correcta, avisa a un administrador.';
+  return '';
+}
+
+// Devuelve la lista de problemas de un valor y unas unidades. "Falta" y "negativo" no son lo mismo.
+function erroresDeMonto(tipo, valor, unidades){
+  const errs=[];
+  const v=Number(valor), u=Number(unidades);
+  if(tipo==='trato' || tipo==='dia'){
+    const max = tipo==='trato' ? LIM.valorTrato : LIM.valorDia;
+    if(valor===''||valor==null||!Number.isFinite(v)||v===0) errs.push(tipo==='trato' ? 'Falta el valor unitario por planta.' : 'Falta el valor total del día.');
+    else if(v<0) errs.push('El valor no puede ser negativo.');
+    else if(v>max) errs.push('El valor ('+dineroCorto(v)+') es demasiado alto; parece un error de tipeo.');
+  }
+  if(tipo==='trato'){
+    if(unidades===''||unidades==null||!Number.isFinite(u)||u===0) errs.push('Faltan las unidades trabajadas.');
+    else if(u<0) errs.push('Las unidades no pueden ser negativas.');
+    else if(u>LIM.unidades) errs.push('Las unidades ('+u.toLocaleString('es-CL')+') son demasiadas; parece un error de tipeo.');
+    else if(Number.isFinite(v) && v>0 && u*v>LIM.montoLinea) errs.push('El monto de la línea ('+dineroCorto(Math.round(u*v))+') parece un error de tipeo.');
+  }
+  return errs;
+}
+
 function revisarErrores(){
   const errores=[];
   const tipo=tipoActual();
-  if(!document.getElementById('fechaFolio').value) errores.push('Falta la fecha del folio.');
+  { const ef=errorDeFecha(document.getElementById('fechaFolio').value); if(ef) errores.push(ef); }
   if(!document.getElementById('selEncargado').value) errores.push('Falta elegir el Encargado SAPA.');
   if(!document.getElementById('selContratista').value) errores.push('Falta elegir el Contratista.');
   if(!document.getElementById('selGrupoCentro').value) errores.push('Falta elegir el Grupo Centro Costo.');
@@ -3791,12 +3917,17 @@ function revisarErrores(){
   if(!document.getElementById('selEnviarA').value) errores.push('Falta elegir a quién enviar.');
   if(!SELECCIONADOS.length) errores.push('El folio no tiene ningún trabajador.');
   if(tipo==='trato'){
-    if(!Number(document.getElementById('valorTratoInput').value)) errores.push('Falta el valor unitario por planta.');
-    const sinUnidades=SELECCIONADOS.filter(r=>!Number((DATOS_TRAB[r]||{}).valor));
-    if(sinUnidades.length) errores.push(sinUnidades.length + ' trabajador(es) sin unidades cargadas.');
+    const valorTrato=document.getElementById('valorTratoInput').value;
+    const ev=erroresDeMonto('trato', valorTrato, 1).filter(m=>!/unidades/i.test(m)); // solo lo del valor
+    ev.forEach(m=>errores.push(m));
+    const malos=SELECCIONADOS.filter(r=>erroresDeMonto('trato', valorTrato||0, (DATOS_TRAB[r]||{}).valor).some(m=>/unidades|monto/i.test(m)));
+    if(malos.length){
+      const ejemplo=erroresDeMonto('trato', valorTrato||0, (DATOS_TRAB[malos[0]]||{}).valor).find(m=>/unidades|monto/i.test(m));
+      errores.push(malos.length+' trabajador(es) con unidades inválidas. '+ejemplo);
+    }
   }
-  if(tipo==='dia' && !Number(document.getElementById('valorDiaInput').value)){
-    errores.push('Falta el valor total del día.');
+  if(tipo==='dia'){
+    erroresDeMonto('dia', document.getElementById('valorDiaInput').value, 0).forEach(m=>errores.push(m));
   }
   return errores;
 }
@@ -3998,8 +4129,12 @@ function repetirUltimoFolio(){
 // en el teléfono: esos son del dispositivo, no de quién esté logueado, y tienen
 // que seguir ahí hasta subir — aunque el celular pase a otro supervisor.
 async function cerrarSesion(){
-  const seguir=confirm('¿Cerrar sesión?\n\nLos folios que ya guardaste en este teléfono se quedan guardados y se suben apenas haya señal.');
+  const pendientes=FOLIOS_LOCALES.filter(f=>f.estado==='pendiente').length;
+  const seguir=confirm('¿Cerrar sesión?\n\n'+(pendientes
+    ? 'Tienes '+pendientes+' folio(s) guardado(s) en este teléfono que todavía NO se han subido. Se quedan guardados, pero no se suben hasta que vuelvas a ingresar con señal.'
+    : 'Los folios que ya guardaste en este teléfono se quedan guardados.'));
   if(!seguir) return;
+  try{ localStorage.removeItem(PERFIL_CACHE); }catch(e){}
   await sb.auth.signOut();
   SELECCIONADOS=[]; DATOS_TRAB={};
   LINEAS_ADMIN=[]; LINEA_EDIT=null; LINEA_ADMIN_EDIT=null;
@@ -4036,16 +4171,32 @@ async function iniciarApp(){
   pintarFoliosLocales();
 
   // Si el teléfono ya tenía una sesión guardada, entra directo sin pedir de nuevo.
+  // También sin señal: ahí no se puede consultar el perfil ni renovar la sesión por internet,
+  // así que se usa el perfil que quedó guardado en el teléfono y se sincroniza cuando vuelva la red.
   try{
-    const {data:{session}}=await sb.auth.getSession();
-    if(session){
-      const {data:perfil}=await sb.from('terrenokizeo_usuarios').select('*').eq('auth_user_id', session.user.id).single();
+    let usuario=null;
+    try{ const {data:{session}}=await sb.auth.getSession(); if(session) usuario=session.user; }catch(e){}
+    if(!usuario){
+      try{ const raw=JSON.parse(localStorage.getItem('sb-cmfvnluppvqyqwpfjrbs-auth-token')||'null'); if(raw && raw.user) usuario=raw.user; }catch(e){}
+    }
+    if(usuario){
+      let perfil=null, sinRed=false;
+      try{
+        const {data, error}=await sb.from('terrenokizeo_usuarios').select('*').eq('auth_user_id', usuario.id).single();
+        if(error && error.code!=='PGRST116') sinRed=true; else perfil=data;
+      }catch(e){ sinRed=true; }
+      if(!perfil && sinRed){
+        const c=leerPerfilCache();
+        if(c && c.perfil && c.perfil.auth_user_id===usuario.id) perfil=c.perfil;
+      }
       if(perfil && perfil.activo){
         USUARIO_ACTUAL=perfil;
-        USUARIO_ACTUAL.correoSesion=session.user.email||null;
+        USUARIO_ACTUAL.correoSesion=usuario.email||null;
+        guardarPerfilCache(perfil, USUARIO_ACTUAL.correoSesion);
         ROL_ACTUAL=perfil.rol;
         aplicarRol();
         ir(esAdministrador() ? 'p-admin-lista' : 'p-tipo');
+        sincronizarSilencioso();
         return;
       }
     }
