@@ -264,9 +264,47 @@
     padding:12px 16px;padding-bottom:calc(12px + env(safe-area-inset-bottom,0px));max-width:460px;margin:0 auto}
 
   /* ===== Hoja del folio (vista PDF) ===== */
-  .hoja{background:#fff;color:#1a1a1a;padding:18px 16px 26px;font-size:11px;line-height:1.45}
-  .hoja-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px}
-  .hoja-logo{font-family:Georgia,"Times New Roman",serif;color:#7B2D26;line-height:1}
+  /* ===== Documento del folio (vista PDF): preliminar / aprobado / anulado ===== */
+  .hoja{--est:#7B2D26;--est-suave:#F7EFEE;background:#fff;color:#1f1f1f;padding:24px 20px 22px;font-size:11px;line-height:1.45;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .hoja.est-preliminar{--est:#2E7D46;--est-suave:#EEF6F0}
+  .hoja.est-anulado{--est:#5A5A5A;--est-suave:#F1F1F1}
+  .hoja-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+  .hoja-logo img{display:block;height:48px;width:auto}
+  .hoja-folio{text-align:right;line-height:1}
+  .hoja-folio .k{font-size:8.5px;letter-spacing:2.4px;color:#8a8a8a;text-transform:uppercase;margin-bottom:6px}
+  .hoja-folio .n{font-size:26px;font-weight:700;color:var(--est);letter-spacing:-.4px}
+  .hoja-folio .n.pend{font-size:12px;font-weight:600;font-style:italic;color:#666;letter-spacing:0}
+  .hoja-banda{color:#fff;background:var(--est);text-align:center;font-weight:700;font-size:12.5px;letter-spacing:3.5px;
+    padding:8px 10px;border-radius:7px;margin-bottom:10px}
+  .hoja-trazas{font-size:9.5px;color:#555;margin-bottom:16px;line-height:1.7;padding:7px 12px;
+    background:var(--est-suave);border-left:3px solid var(--est);border-radius:0 6px 6px 0}
+  .hoja-cuerpo{display:flex;gap:16px;margin-bottom:18px;align-items:flex-start}
+  .hoja-datos{flex:1;min-width:0}
+  .hoja-dato{display:flex;gap:8px;padding:4.5px 0;border-bottom:1px solid #eee}
+  .hoja-dato:last-child{border-bottom:none}
+  .hoja-dato .k{width:42%;flex-shrink:0;color:#7a7a7a;font-size:9.5px}
+  .hoja-dato .v{flex:1;font-weight:600;min-width:0;word-break:break-word}
+  .hoja-firma{width:132px;flex-shrink:0;border:1px solid #d6d6d6;border-radius:10px;height:140px;background:#fcfcfc;
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:8px}
+  .hoja-firma img{max-width:100%;max-height:96px;object-fit:contain}
+  .hoja-firma .pie{border-top:1px dashed #aaa;width:100%;text-align:center;font-size:8px;color:#777;padding-top:4px;margin-top:5px;letter-spacing:.3px}
+  .hoja-registros{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px;font-size:10px;color:#6b6b6b}
+  .hoja-registros b{color:var(--est);font-size:11px;letter-spacing:.3px}
+  table.hoja-tabla{width:100%;border-collapse:separate;border-spacing:0;font-size:9.5px;border:1px solid #e3e3e3;border-radius:7px;overflow:hidden}
+  table.hoja-tabla th{background:var(--est);color:#fff;font-weight:700;font-size:8.5px;letter-spacing:.6px;text-align:left;padding:6px}
+  table.hoja-tabla td{padding:5px 6px;border-bottom:1px solid #eee}
+  table.hoja-tabla tbody tr:nth-child(even) td{background:#faf8f8}
+  table.hoja-tabla td.c,table.hoja-tabla th.c{text-align:center}
+  table.hoja-tabla td.r,table.hoja-tabla th.r{text-align:right}
+  table.hoja-tabla tbody tr.total td{font-weight:700;background:var(--est-suave);border-top:2px solid var(--est);border-bottom:none}
+  table.hoja-tabla tr{page-break-inside:avoid}
+  .hoja-pie{display:flex;justify-content:space-between;font-size:8.5px;color:#9a9a9a;margin-top:24px;
+    border-top:1px solid #e6e6e6;padding-top:7px}
+  body.escritorio .hoja-dato .k{width:32%}
+  body.escritorio table.hoja-tabla{font-size:10px}
+  body:not(.escritorio) table.hoja-tabla td{padding:5px 5px}
+  body:not(.escritorio) table.hoja-tabla th{padding:6px 5px;letter-spacing:.4px}
 
   /* Documento de Orden de Pago — mismo formato que ya usaban Sergio y Felipe */
   .otDoc{font-family:"Helvetica Neue",Arial,sans-serif;color:#111;font-size:14px;
@@ -305,33 +343,6 @@
   .otLbl{display:block;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--gris);font-weight:700;margin-bottom:4px}
   .otIn{width:100%;border:1px solid var(--linea);border-radius:9px;padding:9px 11px;font-family:inherit;font-size:13px;background:#fff;color:var(--tinta)}
   .otIn[readonly]{background:var(--gris-campo);font-weight:700}
-  .hoja-logo .l1{font-size:13px;font-style:italic}
-  .hoja-logo .l2{font-size:26px;font-weight:700;letter-spacing:-.5px;margin-top:1px}
-  .hoja-folio{font-size:13px;font-weight:700;font-style:italic;color:#1a1a1a;white-space:nowrap;padding-top:14px}
-  .hoja-banda{color:#fff;text-align:center;font-weight:700;font-size:14px;letter-spacing:1.2px;padding:9px;margin-bottom:10px}
-  .banda-preliminar{background:#2E7D46}
-  .banda-aprobado{background:#7B2D26}
-  .banda-anulado{background:#5A5A5A}
-  .hoja-trazas{font-size:10px;color:#333;margin-bottom:12px;line-height:1.6}
-  .hoja-cuerpo{display:flex;gap:12px;margin-bottom:14px}
-  .hoja-datos{flex:1;min-width:0}
-  .hoja-dato{display:flex;gap:6px;margin-bottom:2.5px}
-  .hoja-dato .k{width:46%;color:#1a1a1a;flex-shrink:0}
-  .hoja-dato .v{flex:1;font-weight:600;min-width:0;word-break:break-word}
-  .hoja-firma{width:132px;flex-shrink:0;border:1px solid #999;border-radius:5px;height:150px;
-    display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:6px}
-  .hoja-firma img{max-width:100%;max-height:112px;object-fit:contain}
-  .hoja-firma .pie{border-top:1px solid #333;width:100%;text-align:center;font-size:8.5px;color:#333;padding-top:3px;margin-top:4px}
-  .hoja-registros{background:#7B2D26;color:#fff;text-align:center;font-weight:700;font-size:11px;padding:5px;margin-bottom:0}
-  .hoja-registros.preliminar{background:#2E7D46}
-  table.hoja-tabla{width:100%;border-collapse:collapse;font-size:9.5px}
-  table.hoja-tabla th,table.hoja-tabla td{border:1px solid #999;padding:3.5px 5px}
-  table.hoja-tabla th{background:#fff;font-weight:700;font-size:9px;text-align:left}
-  table.hoja-tabla td.c,table.hoja-tabla th.c{text-align:center}
-  table.hoja-tabla td.r,table.hoja-tabla th.r{text-align:right}
-  table.hoja-tabla tr.total td{font-weight:700;border-top:1px solid #333}
-  .hoja-pie{text-align:right;font-size:9px;color:#777;letter-spacing:1.5px;margin-top:22px;
-    border-top:1px solid #ddd;padding-top:6px}
 
   @media print{
     body{background:#fff}
@@ -1064,12 +1075,22 @@ async function cargarCatalogos(){
 // Sube un folio guardado en el teléfono a Supabase. item.payload trae el folio y sus líneas
 // ya armados con los ids reales. Si falla (sin señal), el folio queda "pendiente" y se
 // puede reintentar después sin perder nada.
+const SUBIENDO={}; // folios que se están subiendo ahora mismo (por uuid)
 async function subirFolioLocal(item){
+  if(item.estado==='subido') return true;       // ya está arriba: nada que hacer
+  if(SUBIENDO[item.uuid]) return false;         // ya hay una subida de este mismo folio en curso
+  SUBIENDO[item.uuid]=true;
   try{
+    // Cada línea lleva un identificador propio y estable: si hay que reintentar,
+    // el servidor reconoce la línea y no la guarda dos veces.
+    let cambio=false;
+    (item.payload.lineasRows||[]).forEach(l=>{ if(!l.linea_uuid){ l.linea_uuid=uuidLocal(); cambio=true; } });
+    if(cambio) guardarFoliosLocalesCache();
+
     const {error:e1}=await sb.from('terrenokizeo_folios').upsert(item.payload.folioRow);
     if(e1) throw e1;
     if(item.payload.lineasRows && item.payload.lineasRows.length){
-      const {error:e2}=await sb.from('terrenokizeo_folio_lineas').upsert(item.payload.lineasRows);
+      const {error:e2}=await sb.from('terrenokizeo_folio_lineas').upsert(item.payload.lineasRows,{onConflict:'linea_uuid'});
       if(e2) throw e2;
     }
     const {data}=await sb.from('terrenokizeo_folios').select('correlativo').eq('id', item.uuid).single();
@@ -1084,87 +1105,119 @@ async function subirFolioLocal(item){
     actualizarBadgeSenal(false);
     guardarFoliosLocalesCache();
     return false;
+  }finally{
+    delete SUBIENDO[item.uuid];
   }
 }
 
 // Arma un PDF real, idéntico en formato a la vista "Compartir / Guardar PDF" de la app
 // (mismo encabezado Agrícola San José, misma banda de estado, mismos campos y tabla),
 // listo para mandar como adjunto en el correo automático.
+// Logo oficial de Agrícola San José (PNG recortado y liviano). Proporción ancho/alto = 3.296
+const LOGO_SJ='data:image/png;base64,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';
+const LOGO_SJ_PROPORCION=3.296;
+
 function construirPdfFolioBase64(d){
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF();
-  const COLOR_LOGO=[123,45,38];      // #7B2D26 — mismo marrón del logo y de "aprobado"
-  const COLOR_PRELIMINAR=[46,125,70]; // #2E7D46
-  const COLOR_ANULADO=[90,90,90];     // #5A5A5A
-  const colorBanda = d.estado==='aprobado' ? COLOR_LOGO : d.estado==='anulado' ? COLOR_ANULADO : COLOR_PRELIMINAR;
+  const COLOR_LOGO=[123,45,38];       // #7B2D26 — aprobado
+  const COLOR_PRELIMINAR=[46,125,70];  // #2E7D46
+  const COLOR_ANULADO=[90,90,90];      // #5A5A5A
+  const col   = d.estado==='aprobado' ? COLOR_LOGO : d.estado==='anulado' ? COLOR_ANULADO : COLOR_PRELIMINAR;
+  const suave = d.estado==='aprobado' ? [247,239,238] : d.estado==='anulado' ? [241,241,241] : [238,246,240];
   const textoBanda = d.estado==='aprobado' ? 'APROBADO' : d.estado==='anulado' ? 'ANULADO' : 'PRELIMINAR';
+  const M=14, ANCHO=182, DER=M+ANCHO;
 
-  // Encabezado: logo de texto "Agrícola / San José" + número de folio
-  doc.setTextColor(COLOR_LOGO[0], COLOR_LOGO[1], COLOR_LOGO[2]);
-  doc.setFont('times','italic'); doc.setFontSize(11);
-  doc.text('Agrícola', 14, 16);
-  doc.setFont('times','bold'); doc.setFontSize(20);
-  doc.text('San José', 14, 25);
-  doc.setFont('helvetica','bolditalic'); doc.setFontSize(11);
-  doc.setTextColor(30,30,30);
-  doc.text('FOLIO: '+(d.correlativo!=null?d.correlativo:'al subir'), 196, 16, {align:'right'});
+  // ---- Encabezado: logo oficial a la izquierda, número de folio a la derecha ----
+  const logoW=52, logoH=logoW/LOGO_SJ_PROPORCION;
+  try{ doc.addImage(LOGO_SJ,'PNG',M,11,logoW,logoH,undefined,'FAST'); }
+  catch(e){
+    console.warn('No se pudo dibujar el logo en el PDF', e);
+    doc.setTextColor(COLOR_LOGO[0],COLOR_LOGO[1],COLOR_LOGO[2]);
+    doc.setFont('times','italic'); doc.setFontSize(11); doc.text('Agrícola', M, 16);
+    doc.setFont('times','bold'); doc.setFontSize(20); doc.text('San José', M, 25);
+  }
+  doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(140,140,140);
+  doc.text('F O L I O', DER, 14.5, {align:'right'});
+  if(d.correlativo!=null){
+    doc.setFont('helvetica','bold'); doc.setFontSize(22); doc.setTextColor(col[0],col[1],col[2]);
+    doc.text(String(d.correlativo), DER, 25, {align:'right'});
+  }else{
+    doc.setFont('helvetica','italic'); doc.setFontSize(10); doc.setTextColor(110,110,110);
+    doc.text('se asigna al subir', DER, 24, {align:'right'});
+  }
 
-  // Banda de estado
-  doc.setFillColor(colorBanda[0], colorBanda[1], colorBanda[2]);
-  doc.rect(14, 30, 182, 9, 'F');
+  // ---- Banda de estado ----
+  doc.setFillColor(col[0],col[1],col[2]);
+  doc.roundedRect(M, 32, ANCHO, 9.5, 2, 2, 'F');
   doc.setTextColor(255,255,255);
-  doc.setFont('helvetica','bold'); doc.setFontSize(12);
-  doc.text(textoBanda, 105, 36.3, {align:'center'});
+  doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  doc.text(textoBanda.split('').join(' '), 105, 38.4, {align:'center'});
 
-  // Trazas de registro/aprobación
-  let y=46;
-  doc.setFont('helvetica','normal'); doc.setFontSize(9);
-  doc.setTextColor(90,90,90);
-  (d.trazas||[]).forEach(t=>{ doc.text(t, 14, y); y+=5; });
+  // ---- Trazas (quién registró / aprobó), en un recuadro suave con barra lateral ----
+  let y=45;
+  const trazas=d.trazas||[];
+  if(trazas.length){
+    const hT=trazas.length*4.6+3.5;
+    doc.setFillColor(suave[0],suave[1],suave[2]); doc.rect(M, y, ANCHO, hT, 'F');
+    doc.setFillColor(col[0],col[1],col[2]);       doc.rect(M, y, 1.2, hT, 'F');
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(85,85,85);
+    trazas.forEach((t,i)=>{ doc.text(t, M+5, y+5+i*4.6); });
+    y+=hT+7;
+  }else{ y+=3; }
 
-  // Campos del folio
-  y+=3;
+  // ---- Campos del folio: etiqueta gris a la izquierda, valor en negrita, línea fina entre filas ----
+  const yDatos=y;
+  const XV=M+40, XFIN=135;
   const campo=(label,valor)=>{
-    doc.setFont('helvetica','normal'); doc.setFontSize(10);
-    doc.setTextColor(120,120,120); doc.text(label, 14, y);
-    doc.setTextColor(20,20,20);
-    doc.text(String(valor||'—'), 133, y, {align:'right', maxWidth:113});
-    y+=6.5;
+    const lineas=doc.splitTextToSize(String(valor||'—'), XFIN-XV);
+    const alto=Math.max(6.4, lineas.length*4.4+2);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(125,125,125);
+    doc.text(label, M, y+4.3);
+    doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(25,25,25);
+    doc.text(lineas, XV, y+4.3);
+    doc.setDrawColor(236,236,236); doc.setLineWidth(0.2);
+    doc.line(M, y+alto, XFIN, y+alto);
+    y+=alto;
   };
-  campo('Fecha:', d.fecha);
-  campo('Encargado SAPA:', d.encargado);
-  campo('Rut Supervisor SAPA:', d.rutEncargado);
-  campo('Contratista:', d.contratista);
-  campo('Grupo Centro Costo:', d.grupoCentro);
-  campo('Centro Costo:', d.cuartel);
-  campo('Grupo Labor:', d.grupoLabor);
-  campo('Labor:', d.labor);
-  campo('Unidad Labor:', d.unidad);
-  campo('Tipo de pago:', {trato:'Trato',dia:'Día',asistencia:'Asistencia'}[d.tipo] || d.tipo);
-  if(d.tipo==='trato') campo('Valor Unitario Labor:', dineroPdf(d.valorTrato));
-  if(d.tipo==='dia') campo('Valor jornada completa (Día):', dineroPdf(d.valorDia));
-  campo('Jornada del folio:', String(d.jornadaFolio||'').replace('.',','));
-  campo('Observaciones:', d.obs);
+  campo('Fecha', d.fecha);
+  campo('Encargado SAPA', d.encargado);
+  campo('Rut Supervisor SAPA', d.rutEncargado);
+  campo('Contratista', d.contratista);
+  campo('Grupo Centro Costo', d.grupoCentro);
+  campo('Centro Costo', d.cuartel);
+  campo('Grupo Labor', d.grupoLabor);
+  campo('Labor', d.labor);
+  campo('Unidad Labor', d.unidad);
+  campo('Tipo de pago', {trato:'Trato',dia:'Día',asistencia:'Asistencia'}[d.tipo] || d.tipo);
+  if(d.tipo==='trato') campo('Valor Unitario Labor', dineroPdf(d.valorTrato));
+  if(d.tipo==='dia') campo('Valor jornada completa (Día)', dineroPdf(d.valorDia));
+  campo('Jornada del folio', String(d.jornadaFolio||'').replace('.',','));
+  campo('Observaciones', d.obs);
 
-  // Recuadro de firma — dibuja la firma real si el supervisor la hizo, si no queda vacío
-  doc.setDrawColor(180,180,180);
-  doc.rect(140, 46, 56, 34);
+  // ---- Recuadro de firma: redondeado, firma real si existe, línea punteada y leyenda ----
+  const FX=141, FW=55, FH=42;
+  doc.setDrawColor(214,214,214); doc.setLineWidth(0.3);
+  doc.roundedRect(FX, yDatos, FW, FH, 3, 3, 'S');
   if(d.firma){
-    try{ doc.addImage(d.firma, 'PNG', 141, 47, 54, 32, undefined, 'FAST'); }
+    try{ doc.addImage(d.firma, 'PNG', FX+2, yDatos+2, FW-4, FH-13, undefined, 'FAST'); }
     catch(e){ console.warn('No se pudo dibujar la firma en el PDF', e); }
   }
-  doc.setFontSize(8); doc.setTextColor(120,120,120);
-  doc.text('Firma Encargado SAPA', 168, 84, {align:'center'});
+  doc.setLineDash([0.8,0.8],0); doc.setDrawColor(170,170,170); doc.setLineWidth(0.25);
+  doc.line(FX+4, yDatos+FH-8.5, FX+FW-4, yDatos+FH-8.5);
+  doc.setLineDash([],0);
+  doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(125,125,125);
+  doc.text('Firma Encargado SAPA', FX+FW/2, yDatos+FH-4, {align:'center'});
 
-  // Cantidad de registros
-  y=Math.max(y,90)+4;
-  doc.setFillColor(colorBanda[0], colorBanda[1], colorBanda[2]);
-  doc.rect(14, y, 182, 7, 'F');
-  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(10);
-  doc.text((d.trab||[]).length+' Registro(s)', 105, y+5, {align:'center'});
-  y+=10;
+  // ---- Encabezado del detalle ----
+  y=Math.max(y, yDatos+FH)+8;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(110,110,110);
+  doc.text('Detalle de trabajadores', M, y);
+  doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(col[0],col[1],col[2]);
+  doc.text((d.trab||[]).length+' registro(s)', DER, y, {align:'right'});
+  y+=3;
 
-  // Tabla de trabajadores, igual a la del PDF original
+  // ---- Tabla de trabajadores ----
   const filas=(d.trab||[]).map((t,i)=>{
     let unidMostrar='—', costoMostrar='—';
     if(t.tipo==='trato'){ unidMostrar=(Number(t.unidades)||0).toFixed(2); costoMostrar=dineroPdf((Number(t.unidades)||0)*(Number(t.valorUnitario)||0)); }
@@ -1182,19 +1235,36 @@ function construirPdfFolioBase64(d){
 
   doc.autoTable({
     startY: y,
+    margin: {left:M, right:M, top:14, bottom:18},
     head: [['N°','NOMBRE TRABAJADOR','RUT','JORNADA','UNIDADES','COSTO TRABAJADOR']],
     body: filas,
     foot: [['', 'TOTAL', '', '', totalUnid.toFixed(2), dineroPdf(totalCosto)]],
-    theme: 'grid',
-    headStyles: {fillColor: colorBanda, fontSize:8},
-    footStyles: {fillColor:[235,235,235], textColor:[20,20,20], fontStyle:'bold'},
-    styles: {fontSize:8.5},
-    columnStyles: {0:{halign:'center',cellWidth:10}, 3:{halign:'center'}, 4:{halign:'center'}, 5:{halign:'right'}}
+    theme: 'plain',
+    showFoot: 'lastPage',   // el TOTAL va solo al final, no en cada página
+    styles: {fontSize:8.5, cellPadding:{top:2.2,bottom:2.2,left:2.4,right:2.4}, textColor:[30,30,30]},
+    headStyles: {fillColor:col, textColor:[255,255,255], fontStyle:'bold', fontSize:7.5},
+    bodyStyles: {lineColor:[234,234,234], lineWidth:{bottom:0.2}},
+    alternateRowStyles: {fillColor:[250,248,248]},
+    footStyles: {fillColor:suave, textColor:[20,20,20], fontStyle:'bold', fontSize:9, lineColor:col, lineWidth:{top:0.6}},
+    columnStyles: {0:{halign:'center',cellWidth:10}, 3:{halign:'center'}, 4:{halign:'center'}, 5:{halign:'right'}},
+    didParseCell: (data)=>{
+      // Los encabezados de las columnas numéricas se alinean igual que sus datos
+      if(data.section==='head' || data.section==='foot'){
+        if([0,3,4].includes(data.column.index)) data.cell.styles.halign='center';
+        if(data.column.index===5) data.cell.styles.halign='right';
+      }
+    }
   });
 
-  const yPie=(doc.lastAutoTable ? doc.lastAutoTable.finalY : y+10)+8;
-  doc.setFontSize(8); doc.setTextColor(140,140,140);
-  doc.text('Página 1 de 1', 196, yPie, {align:'right'});
+  // ---- Pie de cada página: leyenda a la izquierda, "Página X de N" a la derecha ----
+  const total=doc.getNumberOfPages();
+  for(let i=1;i<=total;i++){
+    doc.setPage(i);
+    doc.setDrawColor(228,228,228); doc.setLineWidth(0.2); doc.line(M, 284, DER, 284);
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(150,150,150);
+    doc.text('Agrícola San José · Registro de actividades', M, 289);
+    doc.text('Página '+i+' de '+total, DER, 289, {align:'right'});
+  }
 
   return doc.output('datauristring').split(',')[1];
 }
@@ -1427,6 +1497,9 @@ function filtrarAdmin(est){
 // de Liliana, lo descarga, y recién ahí los marca como extraídos — así nunca
 // se repiten, sin importar cuántas veces se apriete el botón.
 async function exportarAprobados(){
+  return conCandado('exportar', _exportarAprobados);
+}
+async function _exportarAprobados(){
   const btn=document.querySelector('#bloqueExportar .btn');
   if(btn){ btn.disabled=true; btn.textContent='Preparando el Excel…'; }
   try{
@@ -1437,6 +1510,20 @@ async function exportarAprobados(){
     if(error) throw error;
     if(!data.length){ alert('No hay folios aprobados pendientes de extraer.'); return; }
 
+    // Se reclaman los folios ANTES de armar el Excel. Si otro administrador exporta al mismo
+    // tiempo, a cada uno le toca un grupo distinto y ningún folio sale en dos archivos.
+    const idsPedidos=data.map(f=>f.id);
+    const {data:reclamados, error:eRec}=await sb.from('terrenokizeo_folios')
+      .update({extraido_en:new Date().toISOString()}).in('id', idsPedidos).is('extraido_en', null).select('id');
+    if(eRec) throw eRec;
+    if(Array.isArray(reclamados)){
+      const propios=new Set(reclamados.map(r=>r.id));
+      for(let i=data.length-1;i>=0;i--){ if(!propios.has(data[i].id)) data.splice(i,1); }
+    }
+    if(!data.length){ alert('Otro administrador ya exportó estos folios hace un instante. No se repite nada.'); cargarConteosAdmin(); cargarFoliosAdmin('aprobado'); return; }
+    const idsReclamados=data.map(f=>f.id);
+
+    try{
     const filas=[];
     data.forEach(f=>{
       const encargado=MAP_USUARIO_NOMBRE[f.encargado_id] || '';
@@ -1472,15 +1559,14 @@ async function exportarAprobados(){
     const nombreArchivo='aprobados_'+hoyISO()+'.xlsx';
     XLSX.writeFile(libro, nombreArchivo);
 
-    const ids=data.map(f=>f.id);
-    const {error:e2}=await sb.from('terrenokizeo_folios').update({extraido_en:new Date().toISOString()}).in('id', ids);
-    if(e2){
-      alert('El Excel se descargó, pero no se pudo marcar como extraído en el servidor.\nSi lo volvés a apretar, van a salir los mismos folios de nuevo — avisa antes de repetir la extracción.');
-    }else{
-      alert(data.length+' folio(s) exportado(s) a '+nombreArchivo+'.\nQuedan marcados como extraídos: la próxima vez no van a volver a salir.');
-    }
+    alert(data.length+' folio(s) exportado(s) a '+nombreArchivo+'.\nQuedan marcados como extraídos: la próxima vez no van a volver a salir.');
     cargarConteosAdmin();
     cargarFoliosAdmin('aprobado');
+    }catch(errExcel){
+      // Si el Excel no se pudo armar, se devuelven los folios para que vuelvan a salir la próxima vez.
+      await sb.from('terrenokizeo_folios').update({extraido_en:null}).in('id', idsReclamados);
+      throw errExcel;
+    }
   }catch(e){
     console.warn('No se pudo exportar', e);
     alert('No se pudo exportar. Revisa la conexión e inténtalo de nuevo.');
@@ -1744,6 +1830,9 @@ async function refrescarDetalleAdmin(id){
 }
 
 async function guardarEdicionAdmin(){
+  return conCandado('edicion-admin', _guardarEdicionAdmin);
+}
+async function _guardarEdicionAdmin(){
   if(!ADMIN_ACTUAL) return;
   const nuevaObs=document.getElementById('adObs').value;
   const {error:e1}=await sb.from('terrenokizeo_folios').update({observaciones:nuevaObs}).eq('id', ADMIN_ACTUAL.id);
@@ -1772,9 +1861,21 @@ async function guardarEdicionAdmin(){
 }
 
 async function accionAdmin(estado){
+  return conCandado('accion-admin', ()=>_accionAdmin(estado));
+}
+async function _accionAdmin(estado){
   if(!ADMIN_ACTUAL) return;
-  const {error}=await sb.from('terrenokizeo_folios').update({estado}).eq('id', ADMIN_ACTUAL.id);
+  // Solo cambia si el folio todavía no está en ese estado; así, aunque otro administrador
+  // ya lo haya aprobado, no se repite el cambio ni el correo de aviso.
+  const {data:cambiados, error}=await sb.from('terrenokizeo_folios')
+    .update({estado}).eq('id', ADMIN_ACTUAL.id).neq('estado', estado).select('id');
   if(error){ alert('No se pudo actualizar el folio. Revisa la conexión e inténtalo de nuevo.'); return; }
+  const huboCambio = !Array.isArray(cambiados) || cambiados.length>0;
+  if(!huboCambio){
+    alert('Este folio ya estaba '+(estado==='aprobado'?'aprobado':'anulado')+' — no se hizo ningún cambio.');
+    ir('p-admin-lista'); filtrarAdmin(estado); cargarConteosAdmin();
+    return;
+  }
   if(estado==='aprobado') enviarAvisoFolioAprobado(ADMIN_ACTUAL);
   alert(estado==='aprobado'
     ? 'Folio aprobado. Queda fechado hoy para el archivo de pago del día.'
@@ -2123,6 +2224,9 @@ async function opRecalcular(){
 }
 
 async function generarOrdenPago(btn){
+  return conCandado('generar-orden', ()=>_generarOrdenPago(btn));
+}
+async function _generarOrdenPago(btn){
   const msg=document.getElementById('opMsg');
   const contratistaNombre=document.getElementById('opContratista').value;
   const laborNombre=document.getElementById('opLabor').value;
@@ -2162,9 +2266,14 @@ async function generarOrdenPago(btn){
       .eq('labor_id', laborId).in('centro_costo_id', ccIds)
       .eq('terrenokizeo_folios.contratista_id', contratistaId)
       .eq('terrenokizeo_folios.estado', 'aprobado');
-    const idsLineas=(lineasAfectar||[]).map(l=>l.id);
+    // Solo se reclaman las líneas que siguen libres: si otra orden las tomó un segundo
+    // antes, no se pisan ni se cuentan dos veces.
+    let idsLineas=(lineasAfectar||[]).map(l=>l.id);
     if(idsLineas.length){
-      await sb.from('terrenokizeo_folio_lineas').update({orden_pago_id:orden.id}).in('id', idsLineas);
+      const {data:tomadas, error:eTom}=await sb.from('terrenokizeo_folio_lineas')
+        .update({orden_pago_id:orden.id}).in('id', idsLineas).is('orden_pago_id', null).select('id');
+      if(eTom) throw eTom;
+      if(Array.isArray(tomadas)) idsLineas=tomadas.map(l=>l.id);
     }
 
     msg.innerHTML='<span style="color:var(--verdeok)">✓ Orden N° '+orden.n_orden+' generada — '+idsLineas.length+' registro(s) de asistencia quedaron cubiertos, ya no aparecen pendientes.</span>';
@@ -2272,6 +2381,9 @@ async function cargarHistorialOrdenes(){
 }
 
 async function anularOrdenPago(id){
+  return conCandado('anular-orden-'+id, ()=>_anularOrdenPago(id));
+}
+async function _anularOrdenPago(id){
   if(!confirm('¿Anular esta orden? Las líneas de asistencia que cubría vuelven a quedar pendientes.')) return;
   try{
     const {error:e1}=await sb.from('terrenokizeo_ordenes_pago').update({estado:'anulada'}).eq('id', id);
@@ -2292,9 +2404,9 @@ function dinero(n){ return '$'+(Number(n)||0).toLocaleString('es-CL'); }
 
 function armarHojaPdf(f){
   const estados={
-    preliminar:{clase:'banda-preliminar', txt:'PRELIMINAR'},
-    aprobado:{clase:'banda-aprobado', txt:'APROBADO'},
-    anulado:{clase:'banda-anulado', txt:'ANULADO'}
+    preliminar:{txt:'PRELIMINAR'},
+    aprobado:{txt:'✓ APROBADO'},
+    anulado:{txt:'ANULADO'}
   };
   const e=estados[f.estado]||estados.preliminar;
   const esTrato = f.tipo==='trato';
@@ -2323,10 +2435,11 @@ function armarHojaPdf(f){
 
   const hoja=
     '<div class="hoja-top">'+
-      '<div class="hoja-logo"><div class="l1">Agrícola</div><div class="l2">San José</div></div>'+
-      '<div class="hoja-folio">FOLIO: '+(f.folio ? f.folio : 'al subir')+'</div>'+
+      '<div class="hoja-logo"><img src="'+LOGO_SJ+'" alt="Agrícola San José"></div>'+
+      '<div class="hoja-folio"><div class="k">Folio</div>'+
+        '<div class="n'+(f.folio?'':' pend')+'">'+(f.folio ? f.folio : 'se asigna al subir')+'</div></div>'+
     '</div>'+
-    '<div class="hoja-banda '+e.clase+'">'+e.txt+'</div>'+
+    '<div class="hoja-banda">'+e.txt+'</div>'+
     '<div class="hoja-trazas">'+f.trazas.join('<br>')+'</div>'+
     '<div class="hoja-cuerpo">'+
       '<div class="hoja-datos">'+
@@ -2350,7 +2463,7 @@ function armarHojaPdf(f){
         '<div class="pie">Firma Encargado SAPA</div>'+
       '</div>'+
     '</div>'+
-    '<div class="hoja-registros'+(f.estado==='preliminar'?' preliminar':'')+'">'+f.trabajadores.length+' Registro(s)</div>'+
+    '<div class="hoja-registros"><span>Detalle de trabajadores</span><b>'+f.trabajadores.length+' registro(s)</b></div>'+
     '<table class="hoja-tabla">'+
       '<thead><tr><th class="c">N°</th><th>NOMBRE TRABAJADOR</th><th>RUT</th>'+
       '<th class="c">JORNADA</th><th class="c">UNIDADES</th><th class="r">COSTO TRABAJADOR</th></tr></thead>'+
@@ -2358,9 +2471,11 @@ function armarHojaPdf(f){
       '<tr class="total"><td></td><td colspan="2">TOTAL</td><td></td>'+
       '<td class="c">'+totalUnid.toFixed(2)+'</td><td class="r">'+dinero(totalCosto)+'</td></tr>'+
       '</tbody></table>'+
-    '<div class="hoja-pie">Página 1 de 1</div>';
+    '<div class="hoja-pie"><span>Agrícola San José · Registro de actividades</span><span>Página 1 de 1</span></div>';
 
-  document.getElementById('hojaPdf').innerHTML=hoja;
+  const elHoja=document.getElementById('hojaPdf');
+  elHoja.className='hoja est-'+(estados[f.estado] ? f.estado : 'preliminar');
+  elHoja.innerHTML=hoja;
 }
 
 // Vista previa desde el formulario del supervisor (siempre preliminar)
@@ -2430,7 +2545,7 @@ function verPdfDelAdmin(){
     valorDia: a.valor,
     jornada: a.jornada,
     obs: a.obs,
-    firma: null,
+    firma: a.firma || null,
     trabajadores: a.trab.map(t=>({nom:(t.nom||'').toUpperCase(), rut:t.rut||'—', jornada:(t.jornada!=null?t.jornada:a.jornada), valor:t.plantas}))
   });
   PDF_VOLVER='p-admin-detalle';
@@ -2680,6 +2795,7 @@ async function guardarFolioAdmin(){
     estado: todoAsistenciaAdm ? 'aprobado' : 'preliminar'
   };
   const lineasRows=LINEAS_ADMIN.map(l=>({
+    linea_uuid: uuidLocal(),
     folio_id: uuid,
     rut_trabajador: l.rut,
     nombre_trabajador: l.nom,
@@ -3303,6 +3419,16 @@ function pintarBannerBorradorAdm(){
 let ROL_ACTUAL='supervisor';
 let USUARIO_ACTUAL=null; // fila de terrenokizeo_usuarios de quien inició sesión
 
+// Candado general: mientras una acción está en curso, un segundo toque (o un toque
+// desde otra pantalla) no hace nada. Se libera siempre al terminar, salga bien o mal.
+const CANDADOS={};
+async function conCandado(clave, fn){
+  if(CANDADOS[clave]) return;
+  CANDADOS[clave]=true;
+  try{ return await fn(); }
+  finally{ CANDADOS[clave]=false; }
+}
+
 function correoSesionActual(){ return (USUARIO_ACTUAL&&USUARIO_ACTUAL.correoSesion)||null; }
 
 function esAdministrador(){ return ROL_ACTUAL==='administrador' || ROL_ACTUAL==='maestro'; }
@@ -3419,6 +3545,9 @@ function pintarListaFormularios(){
 
 // Al recuperar señal, el servidor asigna el correlativo en el orden en que llegan
 async function simularSubida(){
+  return conCandado('subida-manual', _simularSubida);
+}
+async function _simularSubida(){
   const pend=FOLIOS_LOCALES.filter(f=>f.estado==='pendiente');
   if(!pend.length){ alert('No hay folios pendientes de subir.'); return; }
   let subidos=0;
@@ -3591,6 +3720,7 @@ async function guardarFolio(){
     const w=TRABAJADORES.find(t=>t.rut===rut) || {nom:rut};
     const d=DATOS_TRAB[rut]||{};
     return {
+      linea_uuid: uuidLocal(),
       folio_id: uuid,
       rut_trabajador: rut,
       nombre_trabajador: w.nom,
