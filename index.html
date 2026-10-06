@@ -501,6 +501,7 @@
         <button data-ord="llegada" onclick="cambiarOrdenAdmin('llegada')">Por llegada</button>
       </div>
     </div>
+    <p class="desc" id="ayudaOrden" style="margin:-6px 0 14px;font-size:12px"></p>
     <div id="bloqueExportar" style="display:none;margin-bottom:14px">
       <button class="btn btn-ok" onclick="exportarAprobados()">⬇️ Exportar aprobados sin extraer a Excel</button>
     </div>
@@ -1636,6 +1637,10 @@ function cambiarOrdenAdmin(o){
 }
 function marcarOrdenAdmin(){
   document.querySelectorAll('#segOrden button').forEach(b=>b.classList.toggle('on', b.dataset.ord===ADMIN_ORDEN));
+  const ayuda=document.getElementById('ayudaOrden');
+  if(ayuda) ayuda.textContent = ADMIN_ORDEN==='llegada'
+    ? 'Todos los folios en una sola lista: el último que llegó aparece arriba.'
+    : 'Los folios aparecen agrupados bajo el nombre de cada supervisor.';
 }
 function escHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
