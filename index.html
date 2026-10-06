@@ -244,6 +244,18 @@
   .item-pend{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--linea);
     border-radius:9px;margin-bottom:8px;font-size:13px}
   .item-pend .estado{font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:20px;flex-shrink:0}
+  /* Recepción de folios del administrador: agrupada por supervisor o por llegada */
+  .rec-grupo{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--verde);color:var(--tinta);
+    font-weight:700;font-size:12.5px;letter-spacing:.2px;text-transform:uppercase;padding:9px 12px;border-radius:9px;margin:14px 0 8px}
+  .rec-grupo:first-child{margin-top:0}
+  .rec-grupo .cant{background:rgba(255,255,255,.78);border-radius:20px;padding:1px 9px;font-size:11.5px;letter-spacing:0}
+  .rec-fila{display:block;cursor:pointer}
+  .rec-l1{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .rec-contratista{font-weight:700;color:var(--tinta)}
+  .rec-folio{font-size:11.5px;font-weight:700;color:var(--verde-osc);background:var(--verde-suave);padding:2px 10px;border-radius:20px;white-space:nowrap}
+  .rec-l2{margin-top:2px;color:var(--tinta-2)}
+  .rec-meta{color:var(--gris);font-size:11.5px;margin-top:4px}
+  .rec-sup{color:var(--tinta-2);font-weight:600}
   .est-subiendo{background:var(--azul-bg);color:var(--azul)}
   .est-pendiente{background:var(--ambar-bg);color:var(--ambar)}
   .est-ok{background:var(--verdeok-bg);color:var(--verdeok)}
@@ -388,6 +400,7 @@
   body.escritorio #p-admin-lista, body.escritorio #p-admin-cuarteles{max-width:980px;margin:0 auto}
   body.escritorio #listaAdmin{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 16px}
   body.escritorio #listaAdmin .item-pend{margin-bottom:0}
+  body.escritorio #listaAdmin .rec-grupo{grid-column:1/-1;margin:6px 0 0}
   body.escritorio .lista-pend{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   body.escritorio .lista-pend .item-pend{margin-bottom:0}
 
@@ -476,10 +489,17 @@
       <button class="btn" style="padding:9px" onclick="ir('p-admin-cuarteles')">🗺️ Avance por cuartel</button>
     </div>
     <p class="desc" style="margin-bottom:14px">Folios enviados por los supervisores, para aprobar, anular o corregir antes de que pasen al archivo de pago.</p>
-    <div class="segmentado" style="margin-bottom:16px">
+    <div class="segmentado" id="segEstado" style="margin-bottom:12px">
       <button class="on" data-est="preliminar" onclick="filtrarAdmin('preliminar')">Pendientes (<span id="cnt-preliminar"></span>)</button>
       <button data-est="aprobado" onclick="filtrarAdmin('aprobado')">Aprobados (<span id="cnt-aprobado"></span>)</button>
       <button data-est="anulado" onclick="filtrarAdmin('anulado')">Anulados (<span id="cnt-anulado"></span>)</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <span class="desc" style="margin:0;white-space:nowrap">Ver:</span>
+      <div class="segmentado" id="segOrden" style="flex:1">
+        <button class="on" data-ord="supervisor" onclick="cambiarOrdenAdmin('supervisor')">Por supervisor</button>
+        <button data-ord="llegada" onclick="cambiarOrdenAdmin('llegada')">Por llegada</button>
+      </div>
     </div>
     <div id="bloqueExportar" style="display:none;margin-bottom:14px">
       <button class="btn btn-ok" onclick="exportarAprobados()">⬇️ Exportar aprobados sin extraer a Excel</button>
@@ -1460,6 +1480,7 @@ function mapearFolioReal(row){
     supervisor: MAP_USUARIO_NOMBRE[row.encargado_id] || '—',
     correoSupervisor: MAP_USUARIO_CORREO[MAP_USUARIO_NOMBRE[row.encargado_id]] || null,
     hora: fechaHoraCorta(row.creado_en),
+    creadoEn: row.creado_en,
     fecha: row.fecha,
     contratista: MAP_CONTRATISTA_NOMBRE[row.contratista_id] || '—',
     cuartel: cuarteles.join(' / ') || '—',
@@ -1519,7 +1540,7 @@ async function cargarFoliosAdmin(estado){
 
 function filtrarAdmin(est){
   ADMIN_FILTRO=est;
-  document.querySelectorAll('#p-admin-lista .segmentado button').forEach(b=>b.classList.toggle('on', b.dataset.est===est));
+  document.querySelectorAll('#segEstado button').forEach(b=>b.classList.toggle('on', b.dataset.est===est));
   document.getElementById('bloqueExportar').style.display = est==='aprobado' ? 'block' : 'none';
   cargarFoliosAdmin(est);
 }
@@ -1605,21 +1626,63 @@ async function _exportarAprobados(){
     if(btn){ btn.disabled=false; btn.textContent='⬇️ Exportar aprobados sin extraer a Excel'; }
   }
 }
+let ADMIN_ORDEN = 'supervisor';
+try{ if(localStorage.getItem('tk_admin_orden')==='llegada') ADMIN_ORDEN='llegada'; }catch(e){}
+
+function cambiarOrdenAdmin(o){
+  ADMIN_ORDEN=o;
+  try{ localStorage.setItem('tk_admin_orden', o); }catch(e){}
+  pintarAdminLista();
+}
+function marcarOrdenAdmin(){
+  document.querySelectorAll('#segOrden button').forEach(b=>b.classList.toggle('on', b.dataset.ord===ADMIN_ORDEN));
+}
+function escHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+// "13 diciembre 2025 15:55", como en la recepción de Kizeo
+function fechaHoraLarga(ts){
+  if(!ts) return '';
+  const d=new Date(ts);
+  const mes=d.toLocaleDateString('es-CL',{month:'long'});
+  const hh=String(d.getHours()).padStart(2,'0'), mm=String(d.getMinutes()).padStart(2,'0');
+  return d.getDate()+' '+mes+' '+d.getFullYear()+' '+hh+':'+mm;
+}
+
+function filaRecepcion(f, mostrarSupervisor){
+  const tipoTxt = {trato:'Trato', dia:'Día', asistencia:'Asistencia', mixto:'Tipos variados'}[f.tipo] || '';
+  const monto = f.tipo==='asistencia' ? ''
+    : f.tipo==='mixto' ? ''
+    : f.valor==null ? 'sin valor cargado'
+    : (f.tipo==='trato' ? '$'+f.valor+'/planta' : '$'+Number(f.valor).toLocaleString('es-CL')+'/jornada');
+  const detalle=[tipoTxt, monto].filter(Boolean).join(' · ');
+  const aprob = f.fechaAprobacion ? ' · ✓ aprobado el '+fechaLegible(f.fechaAprobacion) : '';
+  return '<div class="item-pend rec-fila" onclick="abrirDetalleAdmin(\''+f.id+'\')">'+
+    '<div class="rec-l1"><div class="rec-contratista">'+escHtml(f.contratista)+'</div>'+
+      '<div class="rec-folio">Folio '+escHtml(f.folio)+'</div></div>'+
+    '<div class="rec-l2">'+escHtml(f.cuartel)+' · '+escHtml(f.labor)+'</div>'+
+    '<div class="rec-meta">'+fechaHoraLarga(f.creadoEn)+(detalle ? ' · '+escHtml(detalle) : '')+aprob+'</div>'+
+    (mostrarSupervisor ? '<div class="rec-meta">Supervisor: <span class="rec-sup">'+escHtml(f.supervisor)+'</span></div>' : '')+
+    '</div>';
+}
+
 function pintarAdminLista(){
+  marcarOrdenAdmin();
   const cont=document.getElementById('listaAdmin');
   if(!FOLIOS_ADMIN.length){ cont.innerHTML='<p class="desc">No hay folios en este estado.</p>'; return; }
-  cont.innerHTML=FOLIOS_ADMIN.map(f=>{
-    const monto = f.tipo==='asistencia' ? 'sin valor (asistencia)'
-      : f.tipo==='mixto' ? 'valores variados'
-      : f.valor==null ? 'sin valor cargado'
-      : (f.tipo==='trato' ? '$'+f.valor+'/planta' : '$'+Number(f.valor).toLocaleString('es-CL')+'/jornada');
-    return '<div class="item-pend" style="cursor:pointer;align-items:flex-start" onclick="abrirDetalleAdmin(\''+f.id+'\')">'+
-      '<div style="flex:1">'+
-      '<div style="font-weight:700;margin-bottom:2px">Folio '+f.folio+' · '+f.cuartel+' · '+f.labor+'</div>'+
-      '<div style="color:var(--gris)">'+f.contratista+' · '+monto+'</div>'+
-      '<div style="color:var(--gris);font-size:11px;margin-top:3px">'+f.supervisor+' · '+f.hora+'</div>'+
-      '</div></div>';
-  }).join('');
+  // Los más recientes primero, tanto en la lista por llegada como dentro de cada supervisor
+  const ordenados=[...FOLIOS_ADMIN].sort((a,b)=>new Date(b.creadoEn||0)-new Date(a.creadoEn||0));
+  if(ADMIN_ORDEN==='llegada'){
+    cont.innerHTML=ordenados.map(f=>filaRecepcion(f,true)).join('');
+    return;
+  }
+  const grupos={};
+  ordenados.forEach(f=>{ (grupos[f.supervisor]=grupos[f.supervisor]||[]).push(f); });
+  const nombres=Object.keys(grupos).sort((a,b)=>a.localeCompare(b,'es'));
+  cont.innerHTML=nombres.map(n=>
+    '<div class="rec-grupo"><span>'+escHtml(n)+'</span><span class="cant">'+grupos[n].length+'</span></div>'+
+    grupos[n].map(f=>filaRecepcion(f,false)).join('')
+  ).join('');
 }
 
 function ir(id){
