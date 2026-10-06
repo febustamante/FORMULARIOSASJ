@@ -587,11 +587,42 @@
     </div>
     <div class="seccion">
       <div class="titulo-seccion">Centro de costo y labor</div>
-      <div class="fila">
-        <div><label>Cuartel</label><input type="text" id="adCuartel" oninput="ADMIN_ACTUAL.cuartel=this.value; pintarAvisoLimitePlantas()"></div>
-        <div><label>Jornada</label><input type="number" step="0.5" id="adJornada"></div>
+      <div id="adEditable">
+        <div class="fila-campo tocable" data-select="adSelGrupoCentro" data-titulo="Grupo centro costo" onclick="abrirSelectorDeCampo(this)">
+          <div class="fc-label">Grupo centro costo</div>
+          <div class="fc-valor" id="valor-adSelGrupoCentro"><span class="txt"></span><span class="chev">›</span></div>
+        </div>
+        <select id="adSelGrupoCentro" onchange="adCambioGrupoCentro()" style="display:none"></select>
+
+        <div class="fila-campo tocable" data-select="adSelCuartel" data-titulo="Centro de costo" onclick="abrirSelectorDeCampo(this)">
+          <div class="fc-label">Cuartel</div>
+          <div class="fc-valor" id="valor-adSelCuartel"><span class="txt"></span><span class="chev">›</span></div>
+        </div>
+        <select id="adSelCuartel" onchange="adCambioCuartel()" style="display:none"></select>
+
+        <div class="fila-campo tocable" data-select="adSelGrupoLabor" data-titulo="Grupo labor" onclick="abrirSelectorDeCampo(this)">
+          <div class="fc-label">Grupo labor</div>
+          <div class="fc-valor" id="valor-adSelGrupoLabor"><span class="txt"></span><span class="chev">›</span></div>
+        </div>
+        <select id="adSelGrupoLabor" onchange="adCambioGrupoLabor()" style="display:none"></select>
+
+        <div class="fila-campo tocable" data-select="adSelLabor" data-titulo="Labor" onclick="abrirSelectorDeCampo(this)">
+          <div class="fc-label">Labor</div>
+          <div class="fc-valor" id="valor-adSelLabor"><span class="txt"></span><span class="chev">›</span></div>
+        </div>
+        <select id="adSelLabor" style="display:none"></select>
+
+        <div class="fila-campo tocable" data-select="adSelJornada" data-titulo="Jornada del folio" onclick="abrirSelectorDeCampo(this)">
+          <div class="fc-label">Jornada del folio</div>
+          <div class="fc-valor" id="valor-adSelJornada"><span class="txt"></span><span class="chev">›</span></div>
+        </div>
+        <select id="adSelJornada" style="display:none"></select>
       </div>
-      <label>Labor</label><input type="text" id="adLabor">
+      <div id="adSoloLectura" style="display:none">
+        <div class="fila-campo"><div class="fc-label">Cuartel</div><div class="fc-solo-lectura" id="adLecCuartel">—</div></div>
+        <div class="fila-campo"><div class="fc-label">Labor</div><div class="fc-solo-lectura" id="adLecLabor">—</div></div>
+        <p class="fc-nota">Este folio tiene líneas con cuarteles o labores distintos: acá no se editan, para no mezclar datos.</p>
+      </div>
     </div>
     <div class="seccion">
       <div class="titulo-seccion">Tipo de pago y trabajadores</div>
@@ -1242,7 +1273,7 @@ function construirPdfFolioBase64(d){
     theme: 'plain',
     showFoot: 'lastPage',   // el TOTAL va solo al final, no en cada página
     styles: {fontSize:8.5, cellPadding:{top:2.2,bottom:2.2,left:2.4,right:2.4}, textColor:[30,30,30]},
-    headStyles: {fillColor:col, textColor:[255,255,255], fontStyle:'bold', fontSize:7.5},
+    headStyles: {fillColor:col, textColor:[255,255,255], fontStyle:'bold', fontSize:7.5, lineColor:col, lineWidth:0.2}, // el borde del mismo color tapa las costuras entre celdas
     bodyStyles: {lineColor:[234,234,234], lineWidth:{bottom:0.2}},
     alternateRowStyles: {fillColor:[250,248,248]},
     footStyles: {fillColor:suave, textColor:[20,20,20], fontStyle:'bold', fontSize:9, lineColor:col, lineWidth:{top:0.6}},
@@ -1711,6 +1742,7 @@ async function pintarAvisoLimitePlantas(){
   if(!ADMIN_ACTUAL || ADMIN_ACTUAL.tipo!=='trato'){ cont.innerHTML=''; return; }
   const folioIdAlAbrir=ADMIN_ACTUAL.id;  // si el usuario abre otro folio antes de que esto termine, no se pisa
   const cuartel=ADMIN_ACTUAL.cuartel;
+  if(!cuartel){ cont.innerHTML='<p class="fc-nota">Elegí el cuartel para revisar su límite de plantas.</p>'; return; }
   const ccId=MAP_CC_ID[cuartel];
   if(!ccId){ cont.innerHTML='<p class="fc-nota">Este folio tiene más de un cuartel — el control de límite no aplica acá.</p>'; return; }
   cont.innerHTML='<p class="desc">Revisando el límite del cuartel…</p>';
@@ -1749,6 +1781,58 @@ async function pintarAvisoLimitePlantas(){
     '</div>';
 }
 
+// ===== Edición del folio (cuartel, labor, jornada): mismas listas desplegables que al crearlo =====
+const ADM_JORNADAS=[['1','1 (jornada completa)'],['0.9','0,9'],['0.8','0,8'],['0.7','0,7'],['0.6','0,6'],
+  ['0.5','0,5 (media jornada)'],['0.4','0,4'],['0.3','0,3'],['0.2','0,2'],['0.1','0,1']];
+
+// Llena un <select> escondido y deja elegido el valor actual (si no está en el catálogo, lo agrega para no perderlo).
+function adLlenarSelect(id, opciones, actual){
+  const sel=document.getElementById(id);
+  let lista=opciones.slice();
+  if(actual && !lista.some(o=>String(o.v)===String(actual))) lista.push({v:actual, t:String(actual)});
+  sel.innerHTML='<option value="">Selecciona un valor</option>'+lista.map(o=>'<option value="'+o.v+'">'+o.t+'</option>').join('');
+  sel.value = actual ? String(actual) : '';
+}
+const adOpc=arr=>arr.map(x=>({v:x,t:x}));
+
+function adPrepararEdicion(){
+  const a=ADMIN_ACTUAL;
+  const editable = a.tipoFormulario==='supervisor';
+  document.getElementById('adEditable').style.display = editable ? '' : 'none';
+  document.getElementById('adSoloLectura').style.display = editable ? 'none' : '';
+  if(!editable){
+    document.getElementById('adLecCuartel').textContent=a.cuartel||'—';
+    document.getElementById('adLecLabor').textContent=a.labor||'—';
+    return;
+  }
+  const grupoCC = MAP_CC_GRUPO[MAP_CC_ID[a.cuartel]] || '';
+  adLlenarSelect('adSelGrupoCentro', adOpc(Object.keys(CENTROS_COSTO)), grupoCC);
+  adLlenarSelect('adSelCuartel', adOpc(CENTROS_COSTO[grupoCC]||[]), a.cuartel);
+  const grupoLab = MAP_LABOR_GRUPO[MAP_LABOR_ID[a.labor]] || '';
+  adLlenarSelect('adSelGrupoLabor', adOpc(Object.keys(LABOR_DATA)), grupoLab);
+  adLlenarSelect('adSelLabor', adOpc((LABOR_DATA[grupoLab]||[]).map(l=>l.label)), a.labor);
+  const j = a.trab[0] ? a.trab[0].jornada : null;
+  const jOpc = j!=null ? ADM_JORNADAS.find(o=>Number(o[0])===Number(j)) : null;
+  adLlenarSelect('adSelJornada', ADM_JORNADAS.map(o=>({v:o[0],t:o[1]})), jOpc ? jOpc[0] : (j!=null ? String(j) : ''));
+  refrescarValoresCampos();
+}
+function adCambioGrupoCentro(){
+  const g=document.getElementById('adSelGrupoCentro').value;
+  adLlenarSelect('adSelCuartel', adOpc(CENTROS_COSTO[g]||[]), '');
+  ADMIN_ACTUAL.cuartel='';
+  refrescarValoresCampos();
+  pintarAvisoLimitePlantas();
+}
+function adCambioCuartel(){
+  ADMIN_ACTUAL.cuartel=document.getElementById('adSelCuartel').value;
+  pintarAvisoLimitePlantas();
+}
+function adCambioGrupoLabor(){
+  const g=document.getElementById('adSelGrupoLabor').value;
+  adLlenarSelect('adSelLabor', adOpc((LABOR_DATA[g]||[]).map(l=>l.label)), '');
+  refrescarValoresCampos();
+}
+
 function abrirDetalleAdmin(id){
   ADMIN_ACTUAL=FOLIOS_ADMIN.find(f=>f.id===id);
   if(!ADMIN_ACTUAL) return;
@@ -1759,9 +1843,7 @@ function abrirDetalleAdmin(id){
     : '';
   document.getElementById('adEncargado').value=ADMIN_ACTUAL.supervisor;
   document.getElementById('adContratista').value=ADMIN_ACTUAL.contratista;
-  document.getElementById('adCuartel').value=ADMIN_ACTUAL.cuartel;
-  document.getElementById('adJornada').value=ADMIN_ACTUAL.trab[0] ? ADMIN_ACTUAL.trab[0].jornada : '';
-  document.getElementById('adLabor').value=ADMIN_ACTUAL.labor;
+  adPrepararEdicion();
   document.getElementById('adObs').value=ADMIN_ACTUAL.obs;
   const tipoTxt = ADMIN_ACTUAL.tipo==='trato' ? 'Trato'+(ADMIN_ACTUAL.valor!=null ? ' · $'+ADMIN_ACTUAL.valor+'/planta' : '')
     : ADMIN_ACTUAL.tipo==='dia' ? 'Día'+(ADMIN_ACTUAL.valor!=null ? ' · $'+Number(ADMIN_ACTUAL.valor).toLocaleString('es-CL')+' la jornada completa' : '')
@@ -1834,6 +1916,14 @@ async function guardarEdicionAdmin(){
 }
 async function _guardarEdicionAdmin(){
   if(!ADMIN_ACTUAL) return;
+  // En un folio de Supervisor, cuartel, labor y jornada no pueden quedar sin elegir.
+  if(ADMIN_ACTUAL.tipoFormulario==='supervisor'){
+    const faltan=[];
+    if(!document.getElementById('adSelCuartel').value) faltan.push('el cuartel');
+    if(!document.getElementById('adSelLabor').value) faltan.push('la labor');
+    if(!document.getElementById('adSelJornada').value) faltan.push('la jornada');
+    if(faltan.length){ alert('Falta elegir '+faltan.join(', ')+' antes de guardar.'); return; }
+  }
   const nuevaObs=document.getElementById('adObs').value;
   const {error:e1}=await sb.from('terrenokizeo_folios').update({observaciones:nuevaObs}).eq('id', ADMIN_ACTUAL.id);
 
@@ -1842,9 +1932,9 @@ async function _guardarEdicionAdmin(){
   // líneas distintas, esos campos quedan de solo lectura para no mezclar todo.
   let e2=null;
   if(ADMIN_ACTUAL.tipoFormulario==='supervisor'){
-    const ccId=MAP_CC_ID[document.getElementById('adCuartel').value];
-    const laborId=MAP_LABOR_ID[document.getElementById('adLabor').value];
-    const nuevaJornada=document.getElementById('adJornada').value;
+    const ccId=MAP_CC_ID[document.getElementById('adSelCuartel').value];
+    const laborId=MAP_LABOR_ID[document.getElementById('adSelLabor').value];
+    const nuevaJornada=document.getElementById('adSelJornada').value;
     const cambios={};
     if(ccId) cambios.centro_costo_id=ccId;
     if(laborId) cambios.labor_id=laborId;
@@ -3607,14 +3697,11 @@ async function revisarDuplicadosServidor(fecha, contratista, cuartel, labor){
   const contratistaId=MAP_CONTRATISTA_ID[contratista], ccId=MAP_CC_ID[cuartel], laborId=MAP_LABOR_ID[labor];
   if(!contratistaId || !ccId || !laborId) return [];
   try{
-    const {data, error}=await sb.from('terrenokizeo_folios')
-      .select('id, terrenokizeo_folio_lineas(centro_costo_id, labor_id)')
-      .eq('fecha', fecha)
-      .eq('contratista_id', contratistaId)
-      .neq('estado', 'anulado');
-    if(error || !data) return [];
-    const hayGemelo=data.some(f=>(f.terrenokizeo_folio_lineas||[]).some(l=>l.centro_costo_id===ccId && l.labor_id===laborId));
-    return hayGemelo ? ['Ya existe un folio subido de ' + contratista + ' en ' + cuartel + ' por ' + labor + ' ese día — puede ser de otro teléfono.'] : [];
+    // La base responde solo "sí / no": un supervisor no puede leer los folios de otras personas.
+    const {data, error}=await sb.rpc('terrenokizeo_hay_folio_gemelo',
+      {p_fecha:fecha, p_contratista:contratistaId, p_cc:ccId, p_labor:laborId});
+    if(error) return [];
+    return data===true ? ['Ya existe un folio subido de ' + contratista + ' en ' + cuartel + ' por ' + labor + ' ese día — puede ser de otro teléfono.'] : [];
   }catch(e){
     console.warn('No se pudo revisar duplicados en el servidor (sin señal)', e);
     return [];
