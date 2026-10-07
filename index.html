@@ -313,6 +313,7 @@
   table.hoja-tabla tr{page-break-inside:avoid}
   .hoja-pie{display:flex;justify-content:space-between;font-size:8.5px;color:#9a9a9a;margin-top:24px;
     border-top:1px solid #e6e6e6;padding-top:7px}
+  table.hoja-tabla.det td, table.hoja-tabla.det th{font-size:9px;padding-left:4px;padding-right:4px}
   body.escritorio .hoja-dato .k{width:32%}
   body.escritorio table.hoja-tabla{font-size:10px}
   body:not(.escritorio) table.hoja-tabla td{padding:5px 5px}
@@ -1098,7 +1099,7 @@ function actualizarBadgeSenal(conSenal){
 window.addEventListener('online', ()=>actualizarBadgeSenal(true));
 window.addEventListener('offline', ()=>actualizarBadgeSenal(false));
 
-async function cargarCatalogos(){
+async function cargarCatalogos(silencioso){
   try{
     const [c,p,l,cc,u]=await Promise.all([
       sb.from('terrenokizeo_contratistas').select('*'),
@@ -1119,7 +1120,7 @@ async function cargarCatalogos(){
       construirEstructuras(d.c,d.p,d.l,d.cc,d.u);
       return false;
     }
-    alert('No hay conexión y este teléfono todavía no tiene un catálogo guardado.\nConéctate a internet al menos una vez para poder trabajar sin señal después.');
+    if(!silencioso) alert('No hay conexión y este teléfono todavía no tiene un catálogo guardado.\nConéctate a internet al menos una vez para poder trabajar sin señal después.');
     return false;
   }
 }
@@ -1236,19 +1237,28 @@ function construirPdfFolioBase64(d){
     doc.line(M, y+alto, XFIN, y+alto);
     y+=alto;
   };
+  const lineasPdf=d.trab||[];
+  const variado=esFolioVariado(lineasPdf);
   campo('Fecha', d.fecha);
   campo('Encargado SAPA', d.encargado);
   campo('Rut Supervisor SAPA', d.rutEncargado);
   campo('Contratista', d.contratista);
   campo('Grupo Centro Costo', d.grupoCentro);
-  campo('Centro Costo', d.cuartel);
-  campo('Grupo Labor', d.grupoLabor);
-  campo('Labor', d.labor);
-  campo('Unidad Labor', d.unidad);
-  campo('Tipo de pago', {trato:'Trato',dia:'Día',asistencia:'Asistencia'}[d.tipo] || d.tipo);
-  if(d.tipo==='trato') campo('Valor Unitario Labor', dineroPdf(d.valorTrato));
-  if(d.tipo==='dia') campo('Valor jornada completa (Día)', dineroPdf(d.valorDia));
-  campo('Jornada del folio', String(d.jornadaFolio||'').replace('.',','));
+  if(variado){
+    campo('Centro Costo', distintosEn(lineasPdf,'cuartel')>1 ? 'Varios (ver detalle abajo)' : d.cuartel);
+    campo('Grupo Labor', d.grupoLabor);
+    campo('Labor', distintosEn(lineasPdf,'labor')>1 ? 'Varias (ver detalle abajo)' : d.labor);
+    campo('Tipo de pago', distintosEn(lineasPdf,'tipo')>1 ? 'Mixto (ver detalle abajo)' : (TIPO_TXT[lineasPdf[0].tipo||d.tipo]||''));
+  }else{
+    campo('Centro Costo', d.cuartel);
+    campo('Grupo Labor', d.grupoLabor);
+    campo('Labor', d.labor);
+    campo('Unidad Labor', d.unidad);
+    campo('Tipo de pago', TIPO_TXT[d.tipo] || d.tipo);
+    if(d.tipo==='trato') campo('Valor Unitario Labor', dineroPdf(d.valorTrato));
+    if(d.tipo==='dia') campo('Valor jornada completa (Día)', dineroPdf(d.valorDia));
+    campo('Jornada del folio', String(d.jornadaFolio||'').replace('.',','));
+  }
   campo('Observaciones', d.obs);
 
   // ---- Recuadro de firma: redondeado, firma real si existe, línea punteada y leyenda ----
@@ -1273,41 +1283,46 @@ function construirPdfFolioBase64(d){
   doc.text((d.trab||[]).length+' registro(s)', DER, y, {align:'right'});
   y+=3;
 
-  // ---- Tabla de trabajadores ----
-  const filas=(d.trab||[]).map((t,i)=>{
-    let unidMostrar='—', costoMostrar='—';
-    if(t.tipo==='trato'){ unidMostrar=(Number(t.unidades)||0).toFixed(2); costoMostrar=dineroPdf((Number(t.unidades)||0)*(Number(t.valorUnitario)||0)); }
-    else if(t.tipo==='dia'){ costoMostrar=dineroPdf(Math.round((Number(t.jornada)||1)*(Number(t.valorUnitario)||0))); }
-    return [i+1, t.nom||'', t.rut||'', String(t.jornada||'1').replace('.',','), unidMostrar, costoMostrar];
-  });
+  // ---- Tabla de trabajadores: cada línea con su propio cálculo (el mismo que la hoja en pantalla) ----
+  const folioBase={tipo:d.tipo, valorUnitario:d.valorTrato, valorDia:d.valorDia};
   let totalUnid=0, totalCosto=0;
-  (d.trab||[]).forEach(t=>{
-    if(t.tipo==='trato'){ totalUnid+=Number(t.unidades)||0; totalCosto+=(Number(t.unidades)||0)*(Number(t.valorUnitario)||0); }
-    else{
-      totalUnid+=1; // igual que en la hoja original: cada trabajador cuenta 1, aunque su fila muestre "—"
-      if(t.tipo==='dia') totalCosto+=Math.round((Number(t.jornada)||1)*(Number(t.valorUnitario)||0));
-    }
+  const filas=lineasPdf.map((t,i)=>{
+    const c=calcularLinea(t, folioBase);
+    totalUnid += c.unid!=null ? c.unid : 1;
+    totalCosto += c.costo;
+    const unidMostrar = c.unid!=null ? c.unid.toFixed(2) : '—';
+    const costoMostrar = c.tipo==='asistencia' ? '—' : dineroPdf(c.costo);
+    const jor=String(t.jornada||'1').replace('.',',');
+    return variado
+      ? [i+1, (t.nom||'')+'\n'+(t.rut||''), t.cuartel||'—', t.labor||'—', TIPO_TXT[c.tipo]||'—', jor, unidMostrar, costoMostrar]
+      : [i+1, t.nom||'', t.rut||'', jor, unidMostrar, costoMostrar];
   });
+  const ultima=variado ? 7 : 5;
+  const centradas=variado ? [0,5,6] : [0,3,4];
 
   doc.autoTable({
     startY: y,
     margin: {left:M, right:M, top:14, bottom:18},
-    head: [['N°','NOMBRE TRABAJADOR','RUT','JORNADA','UNIDADES','COSTO TRABAJADOR']],
+    head: [variado ? ['N°','TRABAJADOR','CUARTEL','LABOR','TIPO','JORN.','UNID.','COSTO']
+                   : ['N°','NOMBRE TRABAJADOR','RUT','JORNADA','UNIDADES','COSTO TRABAJADOR']],
     body: filas,
-    foot: [['', 'TOTAL', '', '', totalUnid.toFixed(2), dineroPdf(totalCosto)]],
+    foot: [variado ? ['', 'TOTAL', '', '', '', '', totalUnid.toFixed(2), dineroPdf(totalCosto)]
+                   : ['', 'TOTAL', '', '', totalUnid.toFixed(2), dineroPdf(totalCosto)]],
     theme: 'plain',
     showFoot: 'lastPage',   // el TOTAL va solo al final, no en cada página
-    styles: {fontSize:8.5, cellPadding:{top:2.2,bottom:2.2,left:2.4,right:2.4}, textColor:[30,30,30]},
+    styles: {fontSize: variado ? 7.8 : 8.5, cellPadding: variado ? {top:2.2,bottom:2.2,left:1.8,right:1.8} : {top:2.2,bottom:2.2,left:2.4,right:2.4}, textColor:[30,30,30]},
     headStyles: {fillColor:col, textColor:[255,255,255], fontStyle:'bold', fontSize:7.5, lineColor:col, lineWidth:0.2}, // el borde del mismo color tapa las costuras entre celdas
     bodyStyles: {lineColor:[234,234,234], lineWidth:{bottom:0.2}},
     alternateRowStyles: {fillColor:[250,248,248]},
     footStyles: {fillColor:suave, textColor:[20,20,20], fontStyle:'bold', fontSize:9, lineColor:col, lineWidth:{top:0.6}},
-    columnStyles: {0:{halign:'center',cellWidth:10}, 3:{halign:'center'}, 4:{halign:'center'}, 5:{halign:'right'}},
+    columnStyles: variado
+      ? {0:{halign:'center',cellWidth:8}, 1:{cellWidth:39}, 2:{cellWidth:21}, 3:{cellWidth:31}, 4:{cellWidth:21}, 5:{halign:'center',cellWidth:14}, 6:{halign:'center',cellWidth:16}, 7:{halign:'right',cellWidth:32}}
+      : {0:{halign:'center',cellWidth:10}, 2:{cellWidth:27}, 3:{halign:'center',cellWidth:19}, 4:{halign:'center',cellWidth:22}, 5:{halign:'right',cellWidth:36}},  // columna del costo ancha: un total de $12.345.678 no se parte en dos líneas
     didParseCell: (data)=>{
       // Los encabezados de las columnas numéricas se alinean igual que sus datos
       if(data.section==='head' || data.section==='foot'){
-        if([0,3,4].includes(data.column.index)) data.cell.styles.halign='center';
-        if(data.column.index===5) data.cell.styles.halign='right';
+        if(centradas.includes(data.column.index)) data.cell.styles.halign='center';
+        if(data.column.index===ultima) data.cell.styles.halign='right';
       }
     }
   });
@@ -1343,14 +1358,15 @@ function enviarAvisoFolioCreado(item){
   if(AVISANDO[item.uuid]) return Promise.resolve();
   AVISANDO[item.uuid]=true;
   const trab=(item.payload.lineasRows||[]).map(l=>({
-    nom:l.nombre_trabajador, rut:l.rut_trabajador, tipo:l.tipo_pago, valorUnitario:l.valor_unitario, jornada:l.jornada, unidades:l.unidades
+    nom:l.nombre_trabajador, rut:l.rut_trabajador, tipo:l.tipo_pago, valorUnitario:l.valor_unitario, jornada:l.jornada, unidades:l.unidades,
+    cuartel:MAP_CC_NOMBRE[l.centro_costo_id]||'', labor:MAP_LABOR_NOMBRE[l.labor_id]||''
   }));
   const estadoReal=item.estadoAprobacion || 'preliminar';
   let pdfBase64=null;
   try{
     pdfBase64=construirPdfFolioBase64({
       correlativo:item.folio, estado:estadoReal,
-      trazas:['Registrado por '+item.encargado+' el '+new Date().toLocaleString('es-CL')+'.',
+      trazas:['Registrado por '+(item.registradoPor||item.encargado)+' el '+fechaHoraLarga(new Date().toISOString())+'.',
         item.folio ? '' : 'Sin subir todavía — el número de folio se asigna al llegar al servidor'].filter(Boolean),
       encargado:item.encargado, rutEncargado:item.rutEncargado,
       contratista:item.contratista, grupoCentro:item.grupoCentro, cuartel:item.cuartel,
@@ -1503,6 +1519,10 @@ function mapearFolioReal(row){
     correoSupervisor: MAP_USUARIO_CORREO[MAP_USUARIO_NOMBRE[row.encargado_id]] || null,
     hora: fechaHoraCorta(row.creado_en),
     creadoEn: row.creado_en,
+    registradoPor: MAP_USUARIO_NOMBRE[row.creado_por] || null,
+    grupoCentro: [...new Set(lineas.map(l=>MAP_CC_GRUPO[l.centro_costo_id]).filter(Boolean))].join(' / ') || '—',
+    grupoLabor: [...new Set(lineas.map(l=>MAP_LABOR_GRUPO[l.labor_id]).filter(Boolean))].join(' / ') || '—',
+    unidad: (labores.length===1 ? unidadDeLabor(labores[0]) : '') || '—',
     fecha: row.fecha,
     contratista: MAP_CONTRATISTA_NOMBRE[row.contratista_id] || '—',
     cuartel: cuarteles.join(' / ') || '—',
@@ -1834,12 +1854,17 @@ async function pintarAvisoLimitePlantas(){
   if(!cuartel){ cont.innerHTML='<p class="fc-nota">Elegí el cuartel para revisar su límite de plantas.</p>'; return; }
   const ccId=MAP_CC_ID[cuartel];
   if(!ccId){ cont.innerHTML='<p class="fc-nota">Este folio tiene más de un cuartel — el control de límite no aplica acá.</p>'; return; }
+  // El límite es de plantas: cada labor (poda, amarra, anillado…) pasa por las mismas plantas, así que se
+  // compara dentro de la MISMA labor, igual que el avance por cuartel.
+  const laborId=MAP_LABOR_ID[ADMIN_ACTUAL.labor];
+  if(!laborId){ cont.innerHTML='<p class="fc-nota">Este folio tiene más de una labor — el control de límite no aplica acá.</p>'; return; }
   cont.innerHTML='<p class="desc">Revisando el límite del cuartel…</p>';
   let yaAprobadas=0;
   try{
     const {data, error}=await sb.from('terrenokizeo_folio_lineas')
       .select('unidades, terrenokizeo_folios!inner(estado)')
       .eq('centro_costo_id', ccId)
+      .eq('labor_id', laborId)
       .eq('tipo_pago', 'trato')
       .eq('terrenokizeo_folios.estado', 'aprobado')
       .neq('folio_id', ADMIN_ACTUAL.id);
@@ -1856,7 +1881,7 @@ async function pintarAvisoLimitePlantas(){
   const total=yaAprobadas+esteFolio;
   if(limite==null){
     cont.innerHTML='<p class="fc-nota">Cuartel '+cuartel+': no hay límite de plantas cargado para este cuartel — no se puede revisar el exceso. '+
-      yaAprobadas.toLocaleString('es-CL')+' plantas ya aprobadas + '+esteFolio.toLocaleString('es-CL')+' de este folio.</p>';
+      yaAprobadas.toLocaleString('es-CL')+' plantas ya aprobadas de '+ADMIN_ACTUAL.labor+' + '+esteFolio.toLocaleString('es-CL')+' de este folio.</p>';
     return;
   }
   const pct=Math.round(total/limite*100);
@@ -1864,7 +1889,7 @@ async function pintarAvisoLimitePlantas(){
   const estiloOk='background:var(--verdeok-bg);border-color:var(--verdeok);color:var(--verdeok)';
   cont.innerHTML='<div class="aviso-dup" style="'+(excede?'':estiloOk)+'">'+
     '<b>'+(excede ? '⚠ Este folio deja el cuartel sobre su límite de plantas' : '✓ Dentro del límite de plantas del cuartel')+'</b>'+
-    'Cuartel '+cuartel+': '+yaAprobadas.toLocaleString('es-CL')+' plantas ya aprobadas + '+esteFolio.toLocaleString('es-CL')+
+    'Cuartel '+cuartel+' · '+ADMIN_ACTUAL.labor+': '+yaAprobadas.toLocaleString('es-CL')+' plantas ya aprobadas + '+esteFolio.toLocaleString('es-CL')+
     ' de este folio = '+total.toLocaleString('es-CL')+' de '+limite.toLocaleString('es-CL')+' ('+pct+'%).'+
     (excede ? '<br>Se excede por '+(total-limite).toLocaleString('es-CL')+' plantas — revisa antes de aprobar.' : '')+
     '</div>';
@@ -2139,9 +2164,22 @@ async function reenviarAvisosPendientes(){
 }
 
 // ===== Sincronización automática: no depende de que alguien se acuerde de tocar el botón =====
+// Si el teléfono abrió la app sin señal y sin catálogo guardado, las listas quedan vacías: se vuelve a
+// intentar solo apenas hay señal, sin que nadie tenga que cerrar y abrir la app.
+async function reintentarCatalogosSiHaceFalta(){
+  if(Object.keys(PERSONAL_DATA||{}).length) return;
+  const ok=await cargarCatalogos(true);
+  if(ok && Object.keys(PERSONAL_DATA||{}).length){
+    // Se repintan las listas con el catálogo recién bajado; no se recarga la página para no pisar lo que se esté haciendo.
+    pintarSupervisores(); pintarGruposLabor(); pintarGruposCentro(); pintarContratistas(); refrescarValoresCampos();
+    actualizarBadgeSenal(true);
+  }
+}
+
 async function sincronizarSilencioso(){
   if(!USUARIO_ACTUAL) return;
   return conCandado('sync-auto', async ()=>{
+    await reintentarCatalogosSiHaceFalta();
     for(const item of FOLIOS_LOCALES.filter(f=>f.estado==='pendiente')) await subirFolioLocal(item);
     await reenviarAvisosPendientes();
     pintarFoliosLocales();
@@ -2643,29 +2681,58 @@ function armarHojaPdf(f){
     anulado:{txt:'ANULADO'}
   };
   const e=estados[f.estado]||estados.preliminar;
-  const esTrato = f.tipo==='trato';
-
+  const lineas=f.trabajadores;
+  const variado=esFolioVariado(lineas);
   const dato=(k,v)=>'<div class="hoja-dato"><div class="k">'+k+'</div><div class="v">'+escHtml(v||'—')+'</div></div>';
 
   let filas='', totalUnid=0, totalCosto=0;
-  f.trabajadores.forEach((t,i)=>{
-    const jor=Number(t.jornada)||1;
-    let unid=1, costo=0, mostrarUnid='—', mostrarCosto='—';
-    if(esTrato){
-      unid=Number(t.valor)||0;
-      costo=unid*(Number(f.valorUnitario)||0);
-      mostrarUnid=unid.toFixed(2);
-      mostrarCosto=dinero(costo);
-    }else if(f.tipo==='dia'){
-      costo=Math.round(jor*(Number(f.valorDia)||0));
-      mostrarCosto=dinero(costo);
+  lineas.forEach((t,i)=>{
+    const c=calcularLinea(t,f);
+    totalUnid += c.unid!=null ? c.unid : 1;   // igual que el PDF: cada línea sin unidades cuenta 1
+    totalCosto += c.costo;
+    const mostrarUnid = c.unid!=null ? c.unid.toFixed(2) : '—';
+    const mostrarCosto = c.tipo==='asistencia' ? '—' : dinero(c.costo);
+    const jor=String(t.jornada||'1').replace('.',',');
+    if(variado){
+      filas+='<tr><td class="c">'+(i+1)+'</td><td>'+escHtml(t.nom)+'<br><span style="color:#888;font-size:8.5px">'+escHtml(t.rut)+'</span></td>'+
+        '<td>'+escHtml(t.cuartel||'—')+'</td><td>'+escHtml(t.labor||'—')+'</td><td>'+(TIPO_TXT[c.tipo]||'—')+'</td>'+
+        '<td class="c">'+jor+'</td><td class="c">'+mostrarUnid+'</td><td class="r">'+mostrarCosto+'</td></tr>';
+    }else{
+      filas+='<tr><td class="c">'+(i+1)+'</td><td>'+escHtml(t.nom)+'</td><td>'+escHtml(t.rut)+'</td>'+
+        '<td class="c">'+jor+'</td><td class="c">'+mostrarUnid+'</td><td class="r">'+mostrarCosto+'</td></tr>';
     }
-    totalUnid+=unid; totalCosto+=costo;
-    filas+='<tr><td class="c">'+(i+1)+'</td><td>'+escHtml(t.nom)+'</td><td>'+escHtml(t.rut)+'</td>'+
-      '<td class="c">'+String(t.jornada||'1').replace('.',',')+'</td>'+
-      '<td class="c">'+mostrarUnid+'</td>'+
-      '<td class="r">'+mostrarCosto+'</td></tr>';
   });
+
+  const esTrato = f.tipo==='trato';
+  const datosVariable = variado
+    ? dato('Centro Costo:', distintosEn(lineas,'cuartel')>1 ? 'Varios (ver detalle abajo)' : f.cuartel)+
+      dato('Grupo Labor:', f.grupoLabor)+
+      dato('Labor:', distintosEn(lineas,'labor')>1 ? 'Varias (ver detalle abajo)' : f.labor)+
+      dato('Tipo de pago:', distintosEn(lineas,'tipo')>1 ? 'Mixto (ver detalle abajo)' : TIPO_TXT[lineas[0].tipo||f.tipo])
+    : dato('Centro Costo:', f.cuartel)+
+      dato('Grupo Labor:', f.grupoLabor)+
+      dato('Labor:', f.labor)+
+      dato('Unidad Labor:', f.unidad)+
+      dato('Tipo de pago:', TIPO_TXT[f.tipo])+
+      (esTrato ? dato('Valor Unitario Labor:', dinero(f.valorUnitario)) : '')+
+      (f.tipo==='dia' ? dato('Valor jornada completa (Día):', dinero(f.valorDia)) : '')+
+      dato('Jornada del folio:', String(f.jornada||'').replace('.',','));
+
+  const tabla = variado
+    ? '<div style="overflow-x:auto"><table class="hoja-tabla det">'+
+      '<thead><tr><th class="c">N°</th><th>TRABAJADOR</th><th>CUARTEL</th><th>LABOR</th><th>TIPO</th>'+
+      '<th class="c">JORN.</th><th class="c">UNID.</th><th class="r">COSTO</th></tr></thead>'+
+      '<tbody>'+filas+
+      '<tr class="total"><td></td><td colspan="5">TOTAL</td>'+
+      '<td class="c">'+totalUnid.toFixed(2)+'</td><td class="r">'+dinero(totalCosto)+'</td></tr>'+
+      '</tbody></table></div>'
+    : '<table class="hoja-tabla">'+
+      '<thead><tr><th class="c">N°</th><th>NOMBRE TRABAJADOR</th><th>RUT</th>'+
+      '<th class="c">JORNADA</th><th class="c">UNIDADES</th><th class="r">COSTO TRABAJADOR</th></tr></thead>'+
+      '<tbody>'+filas+
+      '<tr class="total"><td></td><td colspan="2">TOTAL</td><td></td>'+
+      '<td class="c">'+totalUnid.toFixed(2)+'</td><td class="r">'+dinero(totalCosto)+'</td></tr>'+
+      '</tbody></table>';
 
   const hoja=
     '<div class="hoja-top">'+
@@ -2682,14 +2749,7 @@ function armarHojaPdf(f){
         dato('Rut Supervisor SAPA:', f.rutEncargado)+
         dato('Contratista:', f.contratista)+
         dato('Grupo Centro Costo:', f.grupoCentro)+
-        dato('Centro Costo:', f.cuartel)+
-        dato('Grupo Labor:', f.grupoLabor)+
-        dato('Labor:', f.labor)+
-        dato('Unidad Labor:', f.unidad)+
-        dato('Tipo de pago:', {trato:'Trato',dia:'Día',asistencia:'Asistencia'}[f.tipo])+
-        (esTrato ? dato('Valor Unitario Labor:', dinero(f.valorUnitario)) : '')+
-        (f.tipo==='dia' ? dato('Valor jornada completa (Día):', dinero(f.valorDia)) : '')+
-        dato('Jornada del folio:', String(f.jornada||'').replace('.',','))+
+        datosVariable+
         dato('Observaciones:', f.obs)+
       '</div>'+
       '<div class="hoja-firma">'+
@@ -2697,14 +2757,8 @@ function armarHojaPdf(f){
         '<div class="pie">Firma Encargado SAPA</div>'+
       '</div>'+
     '</div>'+
-    '<div class="hoja-registros"><span>Detalle de trabajadores</span><b>'+f.trabajadores.length+' registro(s)</b></div>'+
-    '<table class="hoja-tabla">'+
-      '<thead><tr><th class="c">N°</th><th>NOMBRE TRABAJADOR</th><th>RUT</th>'+
-      '<th class="c">JORNADA</th><th class="c">UNIDADES</th><th class="r">COSTO TRABAJADOR</th></tr></thead>'+
-      '<tbody>'+filas+
-      '<tr class="total"><td></td><td colspan="2">TOTAL</td><td></td>'+
-      '<td class="c">'+totalUnid.toFixed(2)+'</td><td class="r">'+dinero(totalCosto)+'</td></tr>'+
-      '</tbody></table>'+
+    '<div class="hoja-registros"><span>Detalle de trabajadores</span><b>'+lineas.length+' registro(s)</b></div>'+
+    tabla+
     '<div class="hoja-pie"><span>Agrícola San José · Registro de actividades</span><span>Página 1 de 1</span></div>';
 
   const elHoja=document.getElementById('hojaPdf');
@@ -2761,26 +2815,27 @@ function verPdfDelAdmin(){
     folio: a.folio,
     estado: a.estado,
     fecha: a.fecha,
-    fechaAprobacion: a.fechaAprobacion,
-    horaAprobacion: a.horaAprobacion,
-    trazas: ['Registrado por '+a.supervisor+' · '+a.hora,
-             a.estado==='aprobado' ? 'Aprobado por Sergio Rojas el '+fechaLegible(a.fechaAprobacion)+' a las '+(a.horaAprobacion||'') :
-             a.estado==='anulado' ? 'Anulado por Sergio Rojas' : 'Pendiente de revisión'],
+    trazas: ['Registrado por '+(a.registradoPor||a.supervisor)+' · '+a.hora,
+             a.estado==='aprobado' ? 'Aprobado el '+fechaLegible(a.fechaAprobacion)+(a.horaAprobacion ? ' a las '+a.horaAprobacion : '') :
+             a.estado==='anulado' ? 'Folio anulado' : 'Pendiente de revisión'],
     encargado: a.supervisor,
     rutEncargado: rutPorSupervisor(a.supervisor),
     contratista: a.contratista,
-    grupoCentro: 'El Cerrillo',
+    grupoCentro: a.grupoCentro,
     cuartel: a.cuartel,
-    grupoLabor: 'Campo',
+    grupoLabor: a.grupoLabor,
     labor: a.labor,
-    unidad: a.tipo==='trato' ? 'Plantas' : 'Unidad',
+    unidad: a.unidad,
     tipo: a.tipo,
     valorUnitario: a.valor,
     valorDia: a.valor,
     jornada: a.jornada,
     obs: a.obs,
     firma: a.firma || null,
-    trabajadores: a.trab.map(t=>({nom:(t.nom||'').toUpperCase(), rut:t.rut||'—', jornada:(t.jornada!=null?t.jornada:a.jornada), valor:t.plantas}))
+    trabajadores: a.trab.map(t=>({
+      nom:(t.nom||'').toUpperCase(), rut:t.rut||'—', jornada:(t.jornada!=null?t.jornada:a.jornada),
+      tipo:t.tipo, valorUnitario:t.valorUnitario, unidades:t.unidades, cuartel:t.centroCosto, labor:t.labor
+    }))
   });
   PDF_VOLVER='p-admin-detalle';
   ir('p-pdf');
@@ -3049,6 +3104,8 @@ async function guardarFolioAdmin(){
     encargado: encargadoNombre,
     correoEncargado: MAP_USUARIO_CORREO[encargadoNombre] || null,
     correoSesion: correoSesionActual(),
+    registradoPor: (USUARIO_ACTUAL&&USUARIO_ACTUAL.nombre)||null,
+    rutEncargado: rutPorSupervisor(encargadoNombre),
     grupoCentro: document.getElementById('selGrupoCentroAdm').value,
     cuartel: cuarteles.join(' / '),
     labor: labores.join(' / '),
@@ -3869,6 +3926,29 @@ async function revisarDuplicadosServidor(fecha, contratista, cuartel, labor){
 }
 
 // Lo que no se puede guardar de ninguna manera
+// Cálculo único de cada línea de un folio: lo usan la hoja en pantalla y el PDF del correo,
+// para que nunca puedan discrepar. Cada línea trae su propio tipo, valor, jornada y unidades.
+const TIPO_TXT={trato:'Trato',dia:'Día',asistencia:'Asistencia'};
+function calcularLinea(t, f){
+  const tipo=t.tipo||f.tipo;
+  const jor=Number(t.jornada)||1;
+  let unid=null, costo=0;
+  if(tipo==='trato'){
+    unid=Number(t.unidades!=null ? t.unidades : t.valor)||0;
+    costo=unid*(Number(t.valorUnitario!=null ? t.valorUnitario : f.valorUnitario)||0);
+  }else if(tipo==='dia'){
+    costo=Math.round(jor*(Number(t.valorUnitario!=null ? t.valorUnitario : f.valorDia)||0));
+  }
+  return {tipo, jor, unid, costo};
+}
+const distintosEn=(lineas,k)=>new Set(lineas.map(t=>t[k]||'')).size;
+// Un folio es "variado" si sus líneas no comparten cuartel, labor o tipo de pago (típico del administrativo).
+const esFolioVariado=lineas=>distintosEn(lineas,'cuartel')>1 || distintosEn(lineas,'labor')>1 || distintosEn(lineas,'tipo')>1;
+function unidadDeLabor(nombre){
+  for(const g of Object.keys(LABOR_DATA)){ const l=(LABOR_DATA[g]||[]).find(x=>x.label===nombre); if(l && l.unidad) return l.unidad; }
+  return '';
+}
+
 // Límites para detectar errores de tipeo. Son holgados a propósito: lo normal queda muy por debajo.
 const LIM={unidades:50000, valorTrato:500000, valorDia:500000, montoLinea:5000000, diasPasado:90, diasFuturo:1};
 function dineroCorto(n){ return '$'+Number(n).toLocaleString('es-CL'); }
@@ -4029,6 +4109,7 @@ async function guardarFolio(){
     encargado: encargadoNombre,
     correoEncargado: MAP_USUARIO_CORREO[encargadoNombre] || null,
     correoSesion: correoSesionActual(),
+    registradoPor: (USUARIO_ACTUAL&&USUARIO_ACTUAL.nombre)||null,
     rutEncargado: rutPorSupervisor(encargadoNombre),
     grupoCentro: document.getElementById('selGrupoCentro').value,
     cuartel: cuartelNombre,
