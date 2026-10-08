@@ -3556,7 +3556,21 @@ function guardarFoliosLocalesCache(){
   try{ localStorage.setItem('tk_folios_locales', JSON.stringify(FOLIOS_LOCALES)); }
   catch(e){ console.warn('No se pudo guardar el respaldo local de folios', e); }
 }
+// Versión de los datos de trabajo. Si cambia (por ejemplo, al borrar las pruebas y empezar de cero),
+// cada teléfono descarta UNA sola vez los folios y avisos que tenía guardados y anota la versión nueva.
+// No se debe cambiar a la ligera: un folio sin subir que esté en un teléfono en ese momento se pierde.
+const EPOCA_DATOS='2026-10-08-inicio-real';
+function aplicarEpocaDeDatos(){
+  try{
+    if(localStorage.getItem('tk_epoca')!==EPOCA_DATOS){
+      localStorage.removeItem('tk_folios_locales');
+      localStorage.removeItem('tk_avisos_aprobado');
+      localStorage.setItem('tk_epoca', EPOCA_DATOS);
+    }
+  }catch(e){ console.warn('No se pudo aplicar la versión de datos', e); }
+}
 function restaurarFoliosLocalesCache(){
+  aplicarEpocaDeDatos();
   try{
     const cache=localStorage.getItem('tk_folios_locales');
     if(cache) FOLIOS_LOCALES=JSON.parse(cache);
