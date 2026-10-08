@@ -35,12 +35,15 @@
   /* Barra superior blanca con acento verde */
   .topbar{background:var(--blanco);color:var(--tinta);padding:13px 16px;padding-top:calc(13px + env(safe-area-inset-top,0px));display:flex;align-items:center;gap:10px;
     position:sticky;top:0;z-index:5;border-bottom:1px solid var(--linea)}
-  .topbar .brand{font-weight:600;font-size:16px;letter-spacing:-.1px}
-  .topbar .sub{font-size:11.5px;color:var(--gris);margin-top:1px}
+  .topbar .brand{font-weight:600;font-size:16px;letter-spacing:-.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .topbar > div:nth-child(2){min-width:0;flex:1 1 auto}
+  .topbar .back[style*="hidden"]{display:none}   /* en las pantallas de inicio no hay flecha: no deja un hueco vacío a la izquierda */
+  .topbar .sub{font-size:11.5px;color:var(--gris);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .topbar .back{width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;
     font-size:22px;color:var(--verde);font-weight:600;flex-shrink:0}
   .badge-off{margin-left:auto;font-size:10.5px;background:var(--gris-campo);color:var(--gris);
     padding:5px 10px;border-radius:20px;display:flex;align-items:center;gap:5px;font-weight:600;flex-shrink:0}
+  .badge-off{white-space:nowrap}
   .badge-off .dot{width:6px;height:6px;border-radius:50%;background:#F0A92E}
   .badge-off.con-senal{background:#E7F4EA;color:var(--verdeok)}
   .badge-off.con-senal .dot{background:var(--verdeok)}
@@ -48,6 +51,20 @@
   .pantalla{display:none;padding:0 0 92px}
   .pantalla.activa{display:block}
   .pantalla-pad,.card{padding:16px}
+
+  /* ===== Pantallas de listas y paneles: margen lateral parejo (antes quedaban pegadas al borde) ===== */
+  #p-tipo,#p-recepcion,#p-admin-lista,#p-admin-cuarteles,#p-ordenes-pago,#p-ordenes-historial{padding-left:16px;padding-right:16px}
+  /* lo que ya traía su propio margen de 16px se mantiene a todo el ancho, como antes */
+  #p-tipo .form-item,#p-tipo .tabla-vacia,#p-tipo .fc-nota,
+  #p-recepcion .estado-sync,#p-recepcion .fc-nota,#p-recepcion .tabla-vacia,
+  #p-admin-lista .tabla-vacia,#p-admin-lista .fc-nota,
+  #p-admin-cuarteles .seccion,#p-ordenes-pago .seccion,#p-ordenes-historial .seccion,
+  #p-ordenes-historial .tabla-vacia,#p-ordenes-historial .fc-nota,#p-ordenes-historial .lista-pend{margin-left:-16px;margin-right:-16px}
+  /* títulos de sección sueltos: pequeños, en mayúsculas y grises, alineados con el resto */
+  .pantalla > .titulo-seccion{padding:22px 0 8px;font-size:11.5px;font-weight:700;color:var(--gris);text-transform:uppercase;letter-spacing:.07em}
+  /* filas de formularios con una flecha que indica que se pueden abrir */
+  .form-item{position:relative;padding-right:40px}
+  .form-item::after{content:"›";position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:22px;color:var(--gris);line-height:1}
 
   .card{background:var(--blanco);margin:16px auto;max-width:420px;border:1px solid var(--linea);border-radius:12px;padding:20px}
   h1.tit{font-size:19px;font-weight:600;margin:2px 0 4px}
@@ -176,6 +193,8 @@
   .segmentado button{flex:1;padding:11px 4px;border:none;background:var(--blanco);font-size:13px;font-weight:600;
     color:var(--gris);cursor:pointer;font-family:inherit;border-right:1px solid var(--linea)}
   .segmentado button:last-child{border-right:none}
+  .segmentado{min-width:0;max-width:100%}
+  .segmentado button{min-width:0;flex:1 1 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .segmentado button.on{background:var(--verde);color:#fff}
   .nota-tipo{font-size:12px;color:var(--gris);margin:0 0 14px;line-height:1.5}
 
@@ -399,7 +418,7 @@
 
   /* La bandeja y el mapa de cuarteles aprovechan el ancho: es lo que se revisa desde oficina */
   body.escritorio #p-admin-lista, body.escritorio #p-admin-cuarteles{max-width:980px;margin:0 auto}
-  body.escritorio #listaAdmin{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 16px}
+  body.escritorio #listaAdmin{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0}
   body.escritorio #listaAdmin .item-pend{margin-bottom:0}
   body.escritorio #listaAdmin .rec-grupo{grid-column:1/-1;margin:6px 0 0}
   body.escritorio .lista-pend{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -422,7 +441,7 @@
       <div class="brand" id="tituloTop">Agrícola San José</div>
       <div class="sub" id="subTop">Acceso</div>
     </div>
-    <div class="badge-off" id="badgeSenal"><span class="dot"></span><span id="badgeSenalTxt">Sin señal — modo local</span></div>
+    <div class="badge-off" id="badgeSenal"><span class="dot"></span><span id="badgeSenalTxt">Sin señal</span></div>
     <div class="menu-esquina" id="btnMenu" onclick="alternarMenu(event)" style="display:none">⋮</div>
   </div>
 
@@ -459,14 +478,14 @@
 
   <!-- PANTALLA: RECEPCIÓN (enviados y pendientes por enviar) -->
   <div class="pantalla" id="p-recepcion">
-    <div class="estado-sync">
-      <div class="ok-ico">✓</div>
-      <div><b style="color:var(--tinta)">Contenido actualizado</b><br>Todos tus elementos están sincronizados.</div>
+    <div class="estado-sync" id="estadoSync">
+      <div class="ok-ico" id="estadoSyncIco">✓</div>
+      <div><b style="color:var(--tinta)" id="estadoSyncTit">Contenido actualizado</b><br><span id="estadoSyncTxt">Todos tus elementos están sincronizados.</span></div>
     </div>
     <div class="titulo-seccion">Enviados y pendientes por enviar</div>
     <p class="fc-nota">Se muestran los últimos 10 folios de este teléfono.</p>
     <div id="listaRecepcion"></div>
-    <button class="btn" style="margin:14px 16px 0" onclick="simularSubida()">📡 Sincronizar ahora</button>
+    <button class="btn" style="margin:14px 0 0" onclick="simularSubida()">📡 Sincronizar ahora</button>
   </div>
 
   <!-- PANTALLA: SERVIDOR (cuenta y sesión) -->
@@ -1094,7 +1113,7 @@ function actualizarBadgeSenal(conSenal){
   const txt=document.getElementById('badgeSenalTxt');
   if(!badge || !txt) return;
   badge.classList.toggle('con-senal', !!conSenal);
-  txt.textContent = conSenal ? 'Con señal' : 'Sin señal — modo local';
+  txt.textContent = conSenal ? 'Con señal' : 'Sin señal';
 }
 window.addEventListener('online', ()=>actualizarBadgeSenal(true));
 window.addEventListener('offline', ()=>actualizarBadgeSenal(false));
@@ -3552,6 +3571,17 @@ function uuidLocal(){
 
 function pintarFoliosLocales(){
   if(typeof pintarMisFolios==='function') pintarMisFolios();  // la vista del supervisor usa los mismos datos
+  // El cartel de arriba dice la verdad: "sincronizado" solo si no queda ningún folio sin subir.
+  const sinSubir=FOLIOS_LOCALES.filter(f=>f.estado==='pendiente').length;
+  const ico=document.getElementById('estadoSyncIco'), tit=document.getElementById('estadoSyncTit'), txt=document.getElementById('estadoSyncTxt');
+  if(ico && tit && txt){
+    const caja=document.getElementById('estadoSync');
+    caja.style.color = sinSubir ? '#b7791f' : '';
+    ico.style.background = sinSubir ? '#f0a53a' : '';
+    ico.textContent = sinSubir ? '⏳' : '✓';
+    tit.textContent = sinSubir ? sinSubir+' folio(s) sin subir' : 'Contenido actualizado';
+    txt.textContent = sinSubir ? 'Quedan guardados en este teléfono y suben solos apenas haya señal.' : 'Todos tus elementos están sincronizados.';
+  }
   const cont=document.getElementById('listaRecepcion');
   if(!cont) return;
   if(!FOLIOS_LOCALES.length){ cont.innerHTML='<p class="tabla-vacia">No hay folios guardados todavía.</p>'; return; }
